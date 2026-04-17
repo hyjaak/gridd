@@ -9,6 +9,8 @@ export type User = {
   agreementsSigned?: string[];
   createdAt: string;
   blocked?: boolean;
+  /** Temporary suspension — ISO time after which login is allowed */
+  suspendedUntil?: string;
 };
 
 export type ServiceTier = "standard" | "priority" | "premium";
@@ -23,7 +25,8 @@ export type JobStatus =
   | "arrived"
   | "in_progress"
   | "completed"
-  | "cancelled";
+  | "cancelled"
+  | "disputed";
 
 export type PaymentStatus = "pending" | "confirmed" | "failed";
 
@@ -73,6 +76,8 @@ export type Job = {
   providerPayoutCents?: number;
   /** Snapshot of booking form for support / display */
   bookingDetails?: Record<string, unknown>;
+  /** Admin dispute / support — stop messaging */
+  threadLocked?: boolean;
 };
 
 export type WalletTx = {
@@ -159,5 +164,8 @@ export type Provider = {
   /** Stripe Connect onboarding complete */
   bankConnected?: boolean;
   blocked?: boolean;
+  /** Admin / ops — identity verified */
+  verified?: boolean;
+  suspendedUntil?: string;
 };
 

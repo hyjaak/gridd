@@ -14,6 +14,7 @@ const STATUS_ORDER: JobStatus[] = TRACKING_STEP_DEFS.map((s) => s.status);
 
 /** Map job status to step index (handles legacy assigned + new active) */
 export function trackingStepIndex(status: JobStatus): number {
+  if (status === "disputed") return -1;
   if (status === "requested") return 0;
   if (status === "cancelled" || status === "draft") return -1;
   if (status === "assigned") return STATUS_ORDER.indexOf("active");

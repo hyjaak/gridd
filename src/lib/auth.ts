@@ -178,8 +178,27 @@ export async function signUp(
   window.location.assign("/agreements");
 }
 
+async function assertNotBlockedOrSuspended(uid: string) {
+  const uSnap = await getDoc(doc(db, "users", uid));
+  const pSnap = await getDoc(doc(db, "providers", uid));
+  const u = uSnap.exists() ? (uSnap.data() as { blocked?: boolean; suspendedUntil?: string }) : null;
+  const p = pSnap.exists() ? (pSnap.data() as { blocked?: boolean; suspendedUntil?: string }) : null;
+  if (u?.blocked || p?.blocked) {
+    await firebaseSignOut(auth);
+    clearClientSessionCookies();
+    throw new Error("Account suspended. Contact support.");
+  }
+  const until = u?.suspendedUntil ?? p?.suspendedUntil;
+  if (until && new Date(until).getTime() > Date.now()) {
+    await firebaseSignOut(auth);
+    clearClientSessionCookies();
+    throw new Error("Account temporarily suspended. Try again later.");
+  }
+}
+
 export async function logIn(email: string, password: string) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
+  await assertNotBlockedOrSuspended(cred.user.uid);
   const { profile, role } = await loadProfileForAuth(cred.user.uid);
 
   if (!role || !profile) {
@@ -217,6 +236,7 @@ export async function resetPassword(email: string) {
 export async function googleSignIn() {
   const provider = new GoogleAuthProvider();
   const cred = await signInWithPopup(auth, provider);
+  await assertNotBlockedOrSuspended(cred.user.uid);
   const { profile, role } = await loadProfileForAuth(cred.user.uid);
   if (!role || !profile) {
     window.location.assign("/agreements");

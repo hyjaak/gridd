@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebase-admin";
-import { getJob } from "@/lib/db";
+import { getJob, getUser } from "@/lib/db";
 
 function bearerToken(req: Request) {
   const auth = req.headers.get("authorization") ?? "";
@@ -37,7 +37,9 @@ export async function GET(
   }
 
   const uid = decoded.uid;
-  if (job.customerUid !== uid && job.providerUid !== uid) {
+  const actor = await getUser(uid);
+  const isAdmin = actor?.role === "admin";
+  if (!isAdmin && job.customerUid !== uid && job.providerUid !== uid) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
