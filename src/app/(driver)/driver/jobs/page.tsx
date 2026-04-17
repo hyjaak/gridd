@@ -16,7 +16,9 @@ import {
   where,
 } from "firebase/firestore";
 import { firebaseApp, firebaseAuth } from "@/lib/firebase";
+import { getUserRole } from "@/lib/userRole";
 import { useAuth } from "@/hooks/useAuth";
+import { DriverNav } from "@/components/DriverNav";
 import { money, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
 import { serviceMeta } from "@/lib/driver-service-meta";
 import { Button } from "@/components/ui/Button";
@@ -83,6 +85,21 @@ export default function DriverJobsPage() {
   const [online, setOnline] = useState(false);
   const [provider, setProvider] = useState<Provider | null>(null);
   const [myCompleted, setMyCompleted] = useState<Job[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "customer") router.replace("/home");
+      else if (r === "admin") router.replace("/admin/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -247,7 +264,7 @@ export default function DriverJobsPage() {
   const driverName = profile?.name ?? user?.email?.split("@")[0] ?? "Driver";
 
   return (
-    <main className="min-h-full bg-[#060606] pb-28">
+    <main className="min-h-full bg-[#060606] pb-40">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#060606]/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -407,22 +424,7 @@ export default function DriverJobsPage() {
         ) : null}
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-[#060606]/95 backdrop-blur">
-        <div className="mx-auto grid max-w-4xl grid-cols-3 gap-1 px-6 py-2 text-xs text-[var(--sub)]">
-          <Link className="flex flex-col items-center gap-1 py-2 text-[#00FF88]" href="/jobs">
-            <span>📋</span>
-            <span>Jobs</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/active">
-            <span>⚡</span>
-            <span>Active</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/driver/earnings">
-            <span>💵</span>
-            <span>Earnings</span>
-          </Link>
-        </div>
-      </nav>
+      <DriverNav />
     </main>
   );
 }

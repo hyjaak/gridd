@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { hasRequiredAgreements } from "@/lib/db";
+import { getUserRole, hasRequiredAgreements } from "@/lib/db";
 import type { UserRole } from "@/types";
 
 function bearerToken(req: Request) {
@@ -14,13 +14,6 @@ const FIREBASE_WEB_API_KEY =
 const FIREBASE_PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "gridd-3edba";
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
-
-async function loadRole(uid: string): Promise<UserRole | null> {
-  if (!adminDb) return null;
-  const userSnap = await adminDb.collection("users").doc(uid).get();
-  if (userSnap.exists) return (userSnap.data()?.role as UserRole) ?? null;
-  return null;
-}
 
 function agreementsComplete(role: UserRole, signed: string[]): boolean {
   const base = ["terms", "privacy", "zerotolerance"] as const;
@@ -77,19 +70,37 @@ async function syncWithoutAdmin(idToken: string): Promise<
     };
   }
 
-  const docUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
-  const docRes = await fetch(docUrl, {
+  const usersUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
+  const usersRes = await fetch(usersUrl, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
-  if (!docRes.ok) {
-    return {
-      ok: false,
-      error: "Missing user profile — complete signup or contact support.",
-      status: 400,
-    };
+  let docJson: { fields?: Record<string, unknown> };
+  let role: UserRole | null;
+  let agreementsSigned: string[];
+
+  if (usersRes.ok) {
+    docJson = (await usersRes.json()) as { fields?: Record<string, unknown> };
+    const parsed = parseUserDocFromRest(docJson);
+    role = parsed.role;
+    agreementsSigned = parsed.agreementsSigned;
+  } else {
+    const provUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/providers/${uid}`;
+    const provRes = await fetch(provUrl, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!provRes.ok) {
+      return {
+        ok: false,
+        error: "Missing profile — complete signup or contact support.",
+        status: 400,
+      };
+    }
+    docJson = (await provRes.json()) as { fields?: Record<string, unknown> };
+    const parsed = parseUserDocFromRest(docJson);
+    role = parsed.role ?? "driver";
+    agreementsSigned = parsed.agreementsSigned;
   }
-  const docJson = (await docRes.json()) as { fields?: Record<string, unknown> };
-  const { role, agreementsSigned } = parseUserDocFromRest(docJson);
+
   if (!role) {
     return {
       ok: false,
@@ -142,7 +153,7 @@ export async function POST(req: Request) {
     if (!decoded?.uid) {
       return NextResponse.json({ ok: false, error: "Invalid token" }, { status: 401 });
     }
-    const role = await loadRole(decoded.uid);
+    const role = await getUserRole(decoded.uid);
     if (!role) {
       return NextResponse.json(
         { ok: false, error: "Missing user profile — complete signup or contact support." },

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   addDoc,
   collection,
@@ -16,6 +16,8 @@ import {
 import { MapPin, Phone, Star } from "lucide-react";
 import { firebaseApp, firebaseAuth } from "@/lib/firebase";
 import { BackButton } from "@/components/BackButton";
+import { CustomerNav } from "@/components/CustomerNav";
+import { getUserRole } from "@/lib/userRole";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -41,9 +43,25 @@ function etaCountdown(etaIso: string | undefined): string | null {
 }
 
 export default function TrackJobPage() {
+  const router = useRouter();
   const params = useParams();
   const jobId = String(params.jobId ?? "");
   const { user, profile } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "driver") router.replace("/jobs");
+      else if (r === "admin") router.replace("/admin/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
   const [job, setJob] = useState<Job | null | undefined>(undefined);
   const [tick, setTick] = useState(0);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -209,20 +227,22 @@ export default function TrackJobPage() {
 
   if (job === undefined) {
     return (
-      <main className="min-h-full bg-[#060606] px-6 pb-10 pt-16 sm:pt-10">
+      <main className="min-h-full bg-[#060606] px-6 pb-36 pt-16 sm:pt-10">
         <BackButton href="/track" />
         <div className="mx-auto max-w-xl">
           <div className="h-24 animate-pulse rounded-2xl bg-white/5" />
         </div>
+        <CustomerNav />
       </main>
     );
   }
 
   if (!job) {
     return (
-      <main className="min-h-full bg-[#060606] px-6 pb-10 pt-16 sm:pt-10">
+      <main className="min-h-full bg-[#060606] px-6 pb-36 pt-16 sm:pt-10">
         <BackButton href="/track" />
         <p className="text-sm text-[var(--sub)]">Job not found.</p>
+        <CustomerNav />
       </main>
     );
   }
@@ -231,7 +251,7 @@ export default function TrackJobPage() {
   const displayAddress = job.addressLine ?? [job.city, job.zip].filter(Boolean).join(", ");
 
   return (
-    <main className="min-h-full bg-[#060606] px-6 pb-28 pt-16 sm:pt-10">
+    <main className="min-h-full bg-[#060606] px-6 pb-36 pt-16 sm:pt-10">
       <BackButton href="/track" />
 
       <div className="mx-auto max-w-xl space-y-5">
@@ -455,6 +475,8 @@ export default function TrackJobPage() {
           </div>
         </div>
       ) : null}
+
+      <CustomerNav />
     </main>
   );
 }

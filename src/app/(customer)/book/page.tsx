@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getUserRole } from "@/lib/userRole";
 import { addDoc, collection, getFirestore } from "firebase/firestore";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +14,7 @@ import type { Urgency } from "@/types/booking";
 import { firebaseApp } from "@/lib/firebase";
 import { AddressInput } from "@/components/AddressInput";
 import { BackButton } from "@/components/BackButton";
+import { CustomerNav } from "@/components/CustomerNav";
 import { estimateCentsForService } from "@/lib/booking-estimate";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -64,6 +66,21 @@ function CustomerBookInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { user, profile } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "driver") router.replace("/jobs");
+      else if (r === "admin") router.replace("/admin/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
   const initialService = (params.get("service") ?? "haul") as ServiceId;
 
   const [service, setService] = useState<ServiceId>(initialService);
@@ -240,7 +257,7 @@ function CustomerBookInner() {
     urgency === "now" ? "+$15 rush" : urgency === "today" ? "Same day" : "Scheduled window";
 
   return (
-    <main className="min-h-full bg-[#060606] pb-28 pt-16 sm:pb-8 sm:pt-4">
+    <main className="min-h-full bg-[#060606] pb-40 pt-16 sm:pb-36 sm:pt-4 lg:pb-28">
       <BackButton href="/home" />
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div
@@ -955,7 +972,7 @@ function CustomerBookInner() {
         </section>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--border)] bg-[#060606]/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+      <div className="fixed bottom-14 left-0 right-0 z-40 border-t border-[var(--border)] bg-[#060606]/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur lg:bottom-0 lg:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-[var(--sub)]">Live estimate</div>
@@ -977,6 +994,8 @@ function CustomerBookInner() {
           </p>
         ) : null}
       </div>
+
+      <CustomerNav />
     </main>
   );
 }

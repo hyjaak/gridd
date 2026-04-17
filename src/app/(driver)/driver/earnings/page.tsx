@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   collection,
   doc,
@@ -12,7 +13,9 @@ import {
   where,
 } from "firebase/firestore";
 import { firebaseApp } from "@/lib/firebase";
+import { getUserRole } from "@/lib/userRole";
 import { useAuth } from "@/hooks/useAuth";
+import { DriverNav } from "@/components/DriverNav";
 import { money, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
 import { Card } from "@/components/ui/Card";
 import type { Job } from "@/types";
@@ -49,9 +52,25 @@ function jobsToNextTier(tier: DriverTier | undefined, completed: number): number
 }
 
 export default function DriverEarningsPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [provider, setProvider] = useState<Provider | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "customer") router.replace("/home");
+      else if (r === "admin") router.replace("/admin/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -139,7 +158,7 @@ export default function DriverEarningsPage() {
   const bankOk = Boolean(provider?.stripeConnectId || provider?.bankConnected);
 
   return (
-    <main className="min-h-full bg-[#060606] px-4 pb-28 pt-16 sm:pt-10">
+    <main className="min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold text-[var(--text)]">Earnings</h1>
@@ -207,6 +226,8 @@ export default function DriverEarningsPage() {
           ← Back to jobs
         </Link>
       </div>
+
+      <DriverNav />
     </main>
   );
 }

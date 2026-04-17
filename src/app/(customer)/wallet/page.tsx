@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   collection,
@@ -19,7 +20,9 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import type { WalletTx } from "@/types";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CustomerNav } from "@/components/CustomerNav";
 import { BackButton } from "@/components/BackButton";
+import { getUserRole } from "@/lib/userRole";
 
 function money(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -43,10 +46,26 @@ const TIER_THRESHOLDS = [
 ];
 
 export default function CustomerWalletPage() {
+  const router = useRouter();
   const { user, profile } = useAuth();
   const [tx, setTx] = useState<WalletTx[]>([]);
   const [prefs, setPrefs] = useState<WalletPrefs | null>(null);
   const [flipped, setFlipped] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "driver") router.replace("/jobs");
+      else if (r === "admin") router.replace("/admin/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
 
   const balanceCents = profile?.walletBalanceCents ?? 0;
   const points = profile?.points ?? 0;
@@ -298,30 +317,7 @@ export default function CustomerWalletPage() {
         </section>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-[#060606]/95 backdrop-blur">
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-5 gap-1 px-4 py-2 text-xs text-[var(--sub)]">
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/home">
-            <span>⚡</span>
-            <span>Home</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/book">
-            <span>🔍</span>
-            <span>Book</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/porch">
-            <span>🪑</span>
-            <span>Porch</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 text-[#00FF88]" href="/wallet">
-            <span>💰</span>
-            <span>Wallet</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/history">
-            <span>📋</span>
-            <span>History</span>
-          </Link>
-        </div>
-      </nav>
+      <CustomerNav />
     </main>
   );
 }

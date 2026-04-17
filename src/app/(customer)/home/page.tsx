@@ -13,7 +13,9 @@ import {
 } from "firebase/firestore";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { getUserRole } from "@/lib/userRole";
 import { useAuth, type GriddProfile } from "@/hooks/useAuth";
+import { CustomerNav } from "@/components/CustomerNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import type { Provider } from "@/types";
 import type { Job } from "@/types";
@@ -80,6 +82,27 @@ function Skeleton({ className }: { className: string }) {
 export default function CustomerHomePage() {
   const router = useRouter();
   const { user, profile, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = user;
+      if (!u) return;
+      const r = await getUserRole(u.uid);
+      if (cancelled) return;
+      if (r === "driver") {
+        router.replace("/jobs");
+        return;
+      }
+      if (r === "admin") {
+        router.replace("/admin/dashboard");
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, router]);
   const firstName = (profile?.name ?? "").trim().split(/\s+/)[0] || "there";
   const points = profile?.points ?? 0;
   const walletBalanceCents = walletCentsFromProfile(profile);
@@ -171,7 +194,7 @@ export default function CustomerHomePage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pb-32">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-36 pt-6 sm:px-6 sm:pb-40">
         <section className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[#0a0a0a] p-6">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_20%_-10%,rgba(255,107,0,0.35),transparent_55%),radial-gradient(700px_circle_at_80%_0%,rgba(0,255,136,0.12),transparent_50%)]" />
           <div className="relative">
@@ -364,30 +387,7 @@ export default function CustomerHomePage() {
         </section>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-[#060606]/95 backdrop-blur">
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-5 gap-1 px-4 py-2 text-xs text-[var(--sub)]">
-          <Link className="flex flex-col items-center gap-1 py-2 text-[#00FF88]" href="/home">
-            <span>⚡</span>
-            <span>Home</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/book">
-            <span>🔍</span>
-            <span>Book</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/porch">
-            <span>🪑</span>
-            <span>Porch</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/wallet">
-            <span>💰</span>
-            <span>Wallet</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/history">
-            <span>📋</span>
-            <span>History</span>
-          </Link>
-        </div>
-      </nav>
+      <CustomerNav />
     </main>
   );
 }

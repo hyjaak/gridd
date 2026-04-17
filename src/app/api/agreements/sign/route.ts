@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import {
+  getUserRole,
   hasRequiredAgreements,
   requiredDocsForRole,
   signAgreement,
@@ -12,13 +13,6 @@ function bearerToken(req: Request) {
   const auth = req.headers.get("authorization") ?? "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
   return m?.[1] ?? null;
-}
-
-async function getRole(uid: string): Promise<UserRole | null> {
-  if (!adminDb) return null;
-  const userSnap = await adminDb.collection("users").doc(uid).get();
-  if (userSnap.exists) return (userSnap.data()?.role as UserRole) ?? null;
-  return null;
 }
 
 export async function POST(req: Request) {
@@ -35,7 +29,7 @@ export async function POST(req: Request) {
   const decoded = await adminAuth.verifyIdToken(token).catch(() => null);
   if (!decoded?.uid) return NextResponse.json({ ok: false, error: "Invalid token" }, { status: 401 });
 
-  const role = await getRole(decoded.uid);
+  const role = await getUserRole(decoded.uid);
   if (!role) return NextResponse.json({ ok: false, error: "Missing role" }, { status: 400 });
 
   const required = requiredDocsForRole(role);

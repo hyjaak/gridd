@@ -12,15 +12,12 @@ import {
   updateProfile,
 } from "firebase/auth";
 import type { User as FirebaseUser } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { getUserRole } from "@/lib/userRole";
 import { clearClientSessionCookies, setClientSessionCookies } from "@/lib/session-cookies";
 export { useAuth } from "@/hooks/useAuth";
+export { getUserRole } from "@/lib/userRole";
 
 export type SyncSessionResult =
   | { ok: true; role: UserRole; agreementsOk: boolean }
@@ -34,7 +31,6 @@ type ProfileDoc = {
   role: UserRole;
   agreementsSigned: string[];
   createdAt: unknown;
-  /** Driver primary service area */
   serviceArea?: string;
 };
 
@@ -51,10 +47,6 @@ function routeForRole(role: UserRole) {
   return "/home";
 }
 
-/**
- * Sets httpOnly session cookies from the Firebase ID token. Must succeed before
- * navigating to protected routes, or middleware will send users back to login.
- */
 export async function syncSession(): Promise<SyncSessionResult> {
   const token = await auth.currentUser?.getIdToken(true);
   if (!token) {
@@ -89,10 +81,33 @@ export async function syncSession(): Promise<SyncSessionResult> {
   };
 }
 
-async function loadProfile(uid: string): Promise<ProfileDoc | null> {
+async function loadProfileForAuth(uid: string): Promise<{
+  profile: ProfileDoc | null;
+  role: UserRole | null;
+}> {
+  const role = await getUserRole(uid);
+  if (!role) return { profile: null, role: null };
+
+  if (role === "driver") {
+    const provSnap = await getDoc(doc(db, "providers", uid));
+    if (!provSnap.exists()) return { profile: null, role: null };
+    const d = provSnap.data();
+    const profile: ProfileDoc = {
+      uid,
+      email: d?.email as string | undefined,
+      phone: d?.phone as string | undefined,
+      name: d?.name as string | undefined,
+      role: "driver",
+      agreementsSigned: (d?.agreementsSigned as string[]) ?? [],
+      createdAt: d?.createdAt,
+      serviceArea: d?.serviceArea as string | undefined,
+    };
+    return { profile, role };
+  }
+
   const userSnap = await getDoc(doc(db, "users", uid));
-  if (userSnap.exists()) return userSnap.data() as ProfileDoc;
-  return null;
+  if (!userSnap.exists()) return { profile: null, role: null };
+  return { profile: userSnap.data() as ProfileDoc, role };
 }
 
 function hasAllRequired(role: UserRole, agreementsSigned: string[]) {
@@ -106,26 +121,54 @@ export async function signUp(
   name: string,
   role: UserRole,
   phone?: string,
-  /** Driver service area (full address or ZIP) — optional */
   serviceArea?: string,
 ) {
+  if (role === "admin") {
+    throw new Error("Invalid role for signup.");
+  }
+
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   await updateProfile(cred.user, { displayName: name });
 
-  const profile: ProfileDoc = {
-    uid: cred.user.uid,
-    email,
-    phone,
-    name,
-    role,
-    agreementsSigned: [],
-    createdAt: serverTimestamp(),
-    ...(role === "driver" && serviceArea?.trim()
-      ? { serviceArea: serviceArea.trim() }
-      : {}),
-  };
-
-  await setDoc(doc(db, "users", cred.user.uid), profile, { merge: true });
+  if (role === "customer") {
+    await setDoc(doc(db, "users", cred.user.uid), {
+      uid: cred.user.uid,
+      name,
+      email,
+      phone: phone ?? null,
+      role: "customer",
+      points: 0,
+      tier: "Member",
+      favorites: [],
+      totalSpent: 0,
+      jobCount: 0,
+      walletBalance: 0,
+      agreementsSigned: [],
+      createdAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(doc(db, "providers", cred.user.uid), {
+      uid: cred.user.uid,
+      name,
+      email,
+      phone: phone ?? null,
+      role: "driver",
+      status: "offline",
+      rating: 0,
+      totalRatings: 0,
+      jobCount: 0,
+      totalEarned: 0,
+      tier: "Bronze",
+      bonusPct: 0,
+      verified: false,
+      services: [],
+      serviceIds: [],
+      equityShares: 0,
+      agreementsSigned: [],
+      createdAt: serverTimestamp(),
+      ...(serviceArea?.trim() ? { serviceArea: serviceArea.trim() } : {}),
+    });
+  }
 
   setClientSessionCookies(cred.user.uid, role, false);
   const synced = await syncSession();
@@ -137,17 +180,16 @@ export async function signUp(
 
 export async function logIn(email: string, password: string) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
-  const profile = await loadProfile(cred.user.uid);
+  const { profile, role } = await loadProfileForAuth(cred.user.uid);
 
-  // No Firestore profile yet — send to onboarding (public route; cookies optional).
-  if (!profile) {
+  if (!role || !profile) {
     window.location.assign("/agreements");
     return;
   }
 
   const signed = profile.agreementsSigned ?? [];
-  const agrOk = hasAllRequired(profile.role, signed);
-  setClientSessionCookies(cred.user.uid, profile.role, agrOk);
+  const agrOk = hasAllRequired(role, signed);
+  setClientSessionCookies(cred.user.uid, role, agrOk);
 
   const synced = await syncSession();
   if (!synced.ok) {
@@ -158,7 +200,7 @@ export async function logIn(email: string, password: string) {
     window.location.assign("/agreements");
     return;
   }
-  window.location.assign(routeForRole(profile.role));
+  window.location.assign(routeForRole(role));
 }
 
 export async function logOut() {
@@ -175,14 +217,14 @@ export async function resetPassword(email: string) {
 export async function googleSignIn() {
   const provider = new GoogleAuthProvider();
   const cred = await signInWithPopup(auth, provider);
-  const profile = await loadProfile(cred.user.uid);
-  if (!profile) {
+  const { profile, role } = await loadProfileForAuth(cred.user.uid);
+  if (!role || !profile) {
     window.location.assign("/agreements");
     return;
   }
   const signed = profile.agreementsSigned ?? [];
-  const agrOk = hasAllRequired(profile.role, signed);
-  setClientSessionCookies(cred.user.uid, profile.role, agrOk);
+  const agrOk = hasAllRequired(role, signed);
+  setClientSessionCookies(cred.user.uid, role, agrOk);
 
   const synced = await syncSession();
   if (!synced.ok) {
@@ -193,7 +235,7 @@ export async function googleSignIn() {
     window.location.assign("/agreements");
     return;
   }
-  window.location.assign(routeForRole(profile.role));
+  window.location.assign(routeForRole(role));
 }
 
 export function onAuthChange(
@@ -208,8 +250,7 @@ export function onAuthChange(
       callback({ user: null, profile: null, role: null });
       return;
     }
-    const profile = await loadProfile(u.uid);
-    callback({ user: u, profile, role: profile?.role ?? null });
+    const { profile, role } = await loadProfileForAuth(u.uid);
+    callback({ user: u, profile, role });
   });
 }
-

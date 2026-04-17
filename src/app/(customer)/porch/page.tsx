@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   addDoc,
   collection,
@@ -20,6 +19,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import type { PorchPost, PorchPostType, UserRole } from "@/types";
+import { CustomerNav } from "@/components/CustomerNav";
+import { DriverNav } from "@/components/DriverNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { BackButton } from "@/components/BackButton";
 
@@ -216,7 +217,7 @@ export default function CustomerPorchPage() {
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-6xl px-6 pb-24 pt-6">
+      <div className="mx-auto w-full max-w-6xl px-6 pb-36 pt-6">
         <button
           type="button"
           onClick={() => setComposerOpen(true)}
@@ -409,30 +410,7 @@ export default function CustomerPorchPage() {
         </div>
       ) : null}
 
-      <nav className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-[#060606]/95 backdrop-blur">
-        <div className="mx-auto grid w-full max-w-6xl grid-cols-5 gap-1 px-4 py-2 text-xs text-[var(--sub)]">
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/home">
-            <span>⚡</span>
-            <span>Home</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/book">
-            <span>🔍</span>
-            <span>Book</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 text-[#00FF88]" href="/porch">
-            <span>🪑</span>
-            <span>Porch</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/wallet">
-            <span>💰</span>
-            <span>Wallet</span>
-          </Link>
-          <Link className="flex flex-col items-center gap-1 py-2 hover:text-[var(--text)]" href="/history">
-            <span>📋</span>
-            <span>History</span>
-          </Link>
-        </div>
-      </nav>
+      {role === "driver" ? <DriverNav /> : <CustomerNav />}
     </main>
   );
 }

@@ -12,9 +12,18 @@ export async function getUser(uid: string): Promise<User | null> {
   return snap.exists ? (snap.data() as User) : null;
 }
 
+/** Server-side: `users` first (customer/admin/legacy driver), then `providers` → driver. */
 export async function getUserRole(uid: string): Promise<UserRole | null> {
-  const user = await getUser(uid);
-  return user?.role ?? null;
+  const db = requireAdminDb();
+  const userSnap = await db.collection("users").doc(uid).get();
+  if (userSnap.exists) {
+    const r = userSnap.data()?.role as UserRole | undefined;
+    if (r === "admin" || r === "customer" || r === "driver") return r;
+    return "customer";
+  }
+  const provSnap = await db.collection("providers").doc(uid).get();
+  if (provSnap.exists) return "driver";
+  return null;
 }
 
 export async function createUserProfile({
@@ -67,15 +76,17 @@ export function requiredDocsForRole(role: UserRole) {
 
 export async function getAgreementsSigned(uid: string, role: UserRole) {
   const db = requireAdminDb();
-  const snap = await db.collection("users").doc(uid).get();
-  const data = snap.data() as User | undefined;
+  const coll = role === "driver" ? "providers" : "users";
+  const snap = await db.collection(coll).doc(uid).get();
+  const data = snap.data() as { agreementsSigned?: string[] } | undefined;
   return (data?.agreementsSigned ?? []) as string[];
 }
 
 export async function signAgreement(uid: string, role: UserRole, docId: LegalDocId) {
   const db = requireAdminDb();
+  const coll = role === "driver" ? "providers" : "users";
   await db
-    .collection("users")
+    .collection(coll)
     .doc(uid)
     .set(
       {
