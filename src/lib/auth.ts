@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -161,6 +162,7 @@ export async function signUp(
       tier: "Bronze",
       bonusPct: 0,
       verified: false,
+      verificationStatus: "awaiting_documents",
       services: [],
       serviceIds: [],
       equityShares: 0,
@@ -175,7 +177,26 @@ export async function signUp(
   if (!synced.ok) {
     console.warn("[auth] signUp syncSession:", synced.error);
   }
-  window.location.assign("/agreements");
+
+  if (role === "customer") {
+    await sendEmailVerification(cred.user, {
+      url: "https://gridd.click/login",
+      handleCodeInApp: false,
+    });
+    try {
+      await fetch("/api/email/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name }),
+      });
+    } catch {
+      /* Resend optional */
+    }
+    window.location.assign(`/verify-email?email=${encodeURIComponent(email)}`);
+    return;
+  }
+
+  window.location.assign("/signup/driver-docs");
 }
 
 async function assertNotBlockedOrSuspended(uid: string) {
@@ -196,9 +217,31 @@ async function assertNotBlockedOrSuspended(uid: string) {
   }
 }
 
+function isPasswordProvider(user: FirebaseUser): boolean {
+  return user.providerData.some((p) => p.providerId === "password");
+}
+
+/** Resend Firebase verification email (must be signed in as that user). */
+export async function sendVerificationEmailToCurrentUser() {
+  const u = auth.currentUser;
+  if (!u) throw new Error("Not signed in");
+  await sendEmailVerification(u, {
+    url: "https://gridd.click/login",
+    handleCodeInApp: false,
+  });
+}
+
 export async function logIn(email: string, password: string) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
   await assertNotBlockedOrSuspended(cred.user.uid);
+  await cred.user.reload();
+  if (isPasswordProvider(cred.user) && !cred.user.emailVerified) {
+    await firebaseSignOut(auth);
+    clearClientSessionCookies();
+    window.location.assign(`/verify-email?email=${encodeURIComponent(email)}`);
+    return;
+  }
+
   const { profile, role } = await loadProfileForAuth(cred.user.uid);
 
   if (!role || !profile) {
@@ -208,8 +251,34 @@ export async function logIn(email: string, password: string) {
 
   const signed = profile.agreementsSigned ?? [];
   const agrOk = hasAllRequired(role, signed);
-  setClientSessionCookies(cred.user.uid, role, agrOk);
 
+  if (role === "driver") {
+    const provSnap = await getDoc(doc(db, "providers", cred.user.uid));
+    const vs = (provSnap.data() as { verificationStatus?: string } | undefined)?.verificationStatus;
+    if (vs === "awaiting_documents") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] logIn syncSession:", synced.error);
+      window.location.assign("/signup/driver-docs");
+      return;
+    }
+    if (vs === "pending") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] logIn syncSession:", synced.error);
+      window.location.assign("/driver-pending");
+      return;
+    }
+    if (vs === "rejected") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] logIn syncSession:", synced.error);
+      window.location.assign("/driver-rejected");
+      return;
+    }
+  }
+
+  setClientSessionCookies(cred.user.uid, role, agrOk);
   const synced = await syncSession();
   if (!synced.ok) {
     console.warn("[auth] logIn syncSession:", synced.error);
@@ -237,6 +306,15 @@ export async function googleSignIn() {
   const provider = new GoogleAuthProvider();
   const cred = await signInWithPopup(auth, provider);
   await assertNotBlockedOrSuspended(cred.user.uid);
+  await cred.user.reload();
+  if (!cred.user.emailVerified) {
+    await firebaseSignOut(auth);
+    clearClientSessionCookies();
+    window.location.assign(
+      `/verify-email?email=${encodeURIComponent(cred.user.email ?? "")}`,
+    );
+    return;
+  }
   const { profile, role } = await loadProfileForAuth(cred.user.uid);
   if (!role || !profile) {
     window.location.assign("/agreements");
@@ -244,8 +322,34 @@ export async function googleSignIn() {
   }
   const signed = profile.agreementsSigned ?? [];
   const agrOk = hasAllRequired(role, signed);
-  setClientSessionCookies(cred.user.uid, role, agrOk);
 
+  if (role === "driver") {
+    const provSnap = await getDoc(doc(db, "providers", cred.user.uid));
+    const vs = (provSnap.data() as { verificationStatus?: string } | undefined)?.verificationStatus;
+    if (vs === "awaiting_documents") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] googleSignIn syncSession:", synced.error);
+      window.location.assign("/signup/driver-docs");
+      return;
+    }
+    if (vs === "pending") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] googleSignIn syncSession:", synced.error);
+      window.location.assign("/driver-pending");
+      return;
+    }
+    if (vs === "rejected") {
+      setClientSessionCookies(cred.user.uid, role, false);
+      const synced = await syncSession();
+      if (!synced.ok) console.warn("[auth] googleSignIn syncSession:", synced.error);
+      window.location.assign("/driver-rejected");
+      return;
+    }
+  }
+
+  setClientSessionCookies(cred.user.uid, role, agrOk);
   const synced = await syncSession();
   if (!synced.ok) {
     console.warn("[auth] googleSignIn syncSession:", synced.error);

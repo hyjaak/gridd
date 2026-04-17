@@ -38,7 +38,7 @@ const WARN = "#FFB800";
 const INFO = "#3B82F6";
 const PURPLE = "#8B5CF6";
 
-type TabId = "overview" | "jobs" | "providers" | "messages" | "security" | "revenue";
+type TabId = "overview" | "jobs" | "providers" | "messages" | "security" | "approvals" | "revenue";
 
 type FireAlert = {
   id: string;
@@ -71,6 +71,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "providers", label: "Providers", icon: "🚛" },
   { id: "messages", label: "Messages", icon: "💬" },
   { id: "security", label: "Security", icon: "🔐" },
+  { id: "approvals", label: "Approvals", icon: "📋" },
   { id: "revenue", label: "Revenue", icon: "💰" },
 ];
 
@@ -139,6 +140,10 @@ export function AdminCommandCenter() {
 
   const [assignJob, setAssignJob] = useState<Job | null>(null);
   const [dismissedSyntheticIds, setDismissedSyntheticIds] = useState<Set<string>>(() => new Set());
+
+  const [rejectTarget, setRejectTarget] = useState<Provider | null>(null);
+  const [rejectPresets, setRejectPresets] = useState<Set<string>>(() => new Set());
+  const [rejectOther, setRejectOther] = useState("");
 
   useEffect(() => {
     const q = query(collection(db, "jobs"), orderBy("createdAt", "desc"), limit(500));
@@ -294,6 +299,11 @@ export function AdminCommandCenter() {
   const criticalCount = useMemo(() => {
     return alerts.filter((a) => normalizeAlertSeverity(a.severity) === "critical").length;
   }, [alerts]);
+
+  const pendingApprovals = useMemo(
+    () => providers.filter((p) => p.verificationStatus === "pending"),
+    [providers],
+  );
 
   const syntheticAlerts = useMemo(() => {
     const out: {
@@ -545,6 +555,33 @@ export function AdminCommandCenter() {
     }
   };
 
+  const approveDriverApplication = async (uid: string) => {
+    try {
+      await adminPost("/api/admin/drivers/approve", { uid });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Approve failed");
+    }
+  };
+
+  const submitReject = async () => {
+    if (!rejectTarget) return;
+    const parts: string[] = [];
+    if (rejectPresets.has("license")) parts.push("License expired or invalid");
+    if (rejectPresets.has("insurance")) parts.push("Insurance expired or invalid");
+    if (rejectPresets.has("photos")) parts.push("Unclear document photos");
+    if (rejectPresets.has("vehicle")) parts.push("Vehicle does not meet requirements");
+    if (rejectOther.trim()) parts.push(rejectOther.trim());
+    const reason = parts.length ? parts.join(" · ") : "Application not approved.";
+    try {
+      await adminPost("/api/admin/drivers/reject", { uid: rejectTarget.uid, reason });
+      setRejectTarget(null);
+      setRejectPresets(new Set());
+      setRejectOther("");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Reject failed");
+    }
+  };
+
   const livePulse = (
     <span className="flex items-center gap-2 text-sm text-zinc-400">
       <span className="relative flex h-2.5 w-2.5">
@@ -609,6 +646,11 @@ export function AdminCommandCenter() {
             >
               <span className="mr-1.5">{t.icon}</span>
               {t.label}
+              {t.id === "approvals" && pendingApprovals.length > 0 ? (
+                <span className="ml-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {pendingApprovals.length}
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -668,10 +710,86 @@ export function AdminCommandCenter() {
           />
         ) : null}
 
+        {tab === "approvals" ? (
+          <ApprovalsTab
+            pending={pendingApprovals}
+            onApprove={(uid) => void approveDriverApplication(uid)}
+            onReject={(p) => setRejectTarget(p)}
+          />
+        ) : null}
+
         {tab === "revenue" ? (
           <RevenueTab revenueDeep={revenueDeep} exportCsv={exportCsv} exportPrint={exportPrint} />
         ) : null}
       </div>
+
+      {/* Reject driver modal */}
+      {rejectTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border p-6"
+            style={{ background: CARD, borderColor: BORDER }}
+          >
+            <h3 className="text-lg font-semibold text-zinc-100">Reason for rejection</h3>
+            <div className="mt-4 space-y-2 text-sm text-zinc-300">
+              {(
+                [
+                  ["license", "License expired or invalid"],
+                  ["insurance", "Insurance expired or invalid"],
+                  ["photos", "Unclear document photos"],
+                  ["vehicle", "Vehicle does not meet requirements"],
+                ] as const
+              ).map(([id, label]) => (
+                <label key={id} className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={rejectPresets.has(id)}
+                    onChange={() =>
+                      setRejectPresets((prev) => {
+                        const n = new Set(prev);
+                        if (n.has(id)) n.delete(id);
+                        else n.add(id);
+                        return n;
+                      })
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+              <div>
+                <label className="text-xs text-zinc-500">Other</label>
+                <textarea
+                  value={rejectOther}
+                  onChange={(e) => setRejectOther(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-xl border border-zinc-700 bg-black/40 px-3 py-2 text-zinc-200"
+                  placeholder="Details…"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-zinc-700 py-2 text-sm text-zinc-400"
+                onClick={() => {
+                  setRejectTarget(null);
+                  setRejectPresets(new Set());
+                  setRejectOther("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitReject()}
+                className="flex-1 rounded-xl bg-red-600 py-2 text-sm font-bold text-white"
+              >
+                Send Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Assign driver modal */}
       {assignJob ? (
@@ -1523,6 +1641,153 @@ function SecurityTab({
                     </button>
                   </>
                 ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function submittedStr(p: Provider): string {
+  const raw = p.submittedAt as unknown;
+  if (!raw) return "—";
+  if (typeof raw === "string") return timeAgo(raw);
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "toDate" in raw &&
+    typeof (raw as { toDate: () => Date }).toDate === "function"
+  ) {
+    return timeAgo((raw as { toDate: () => Date }).toDate().toISOString());
+  }
+  return "—";
+}
+
+function ApprovalsTab({
+  pending,
+  onApprove,
+  onReject,
+}: {
+  pending: Provider[];
+  onApprove: (uid: string) => void;
+  onReject: (p: Provider) => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-zinc-100">Driver Applications</h2>
+          <p className="text-sm text-zinc-500">Pending CEO review</p>
+        </div>
+        <span className="rounded-full bg-amber-500/20 px-4 py-1.5 text-sm font-bold text-amber-400">
+          {pending.length} Pending Review
+        </span>
+      </div>
+
+      {pending.length === 0 ? (
+        <p className="text-sm text-zinc-500">No pending applications.</p>
+      ) : null}
+
+      <div className="space-y-4">
+        {pending.map((p) => {
+          const docs = p.documents;
+          const vehicle = docs
+            ? `${docs.vehicleYear ?? ""} ${docs.vehicleMake ?? ""} ${docs.vehicleModel ?? ""} ${docs.vehicleColor ?? ""} · ${docs.licensePlate ?? ""}`
+            : "—";
+          return (
+            <div
+              key={p.uid}
+              className="rounded-2xl border p-5"
+              style={{ background: CARD, borderColor: BORDER }}
+            >
+              <div className="flex flex-wrap gap-4">
+                {docs?.profilePhoto ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={docs.profilePhoto}
+                    alt=""
+                    className="h-20 w-20 rounded-2xl object-cover"
+                  />
+                ) : (
+                  <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-zinc-800 text-2xl">👤</div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-lg font-semibold text-zinc-100">{p.name}</div>
+                  <div className="text-sm text-zinc-500">{p.email ?? "—"}</div>
+                  <div className="text-sm text-zinc-400">
+                    📍 {p.city || "—"}
+                    {p.zip ?? docs?.serviceZip ? ` · ${p.zip ?? docs?.serviceZip}` : ""}
+                  </div>
+                  <div className="text-xs text-zinc-600">Submitted: {submittedStr(p)}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 text-sm text-zinc-300">🚗 {vehicle}</div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(p.serviceIds ?? docs?.serviceIds ?? []).slice(0, 11).map((sid) => (
+                  <span key={sid} className="text-lg">
+                    {DRIVER_SERVICE_META[sid]?.icon ?? "·"}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                {docs?.licenseFront ? (
+                  <a
+                    href={docs.licenseFront}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#3B82F6] hover:underline"
+                  >
+                    🪪 License Front — View
+                  </a>
+                ) : null}
+                {docs?.licenseBack ? (
+                  <a
+                    href={docs.licenseBack}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#3B82F6] hover:underline"
+                  >
+                    🪪 License Back — View
+                  </a>
+                ) : null}
+                {docs?.insurance ? (
+                  <a
+                    href={docs.insurance}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#3B82F6] hover:underline"
+                  >
+                    🛡️ Insurance Card — View
+                  </a>
+                ) : null}
+              </div>
+
+              <div className="mt-3 font-mono text-xs text-zinc-500">
+                License: {docs?.licenseNumber ?? "—"} · Exp {docs?.licenseExpiry ?? "—"} · {docs?.licenseState ?? ""}
+              </div>
+              <div className="font-mono text-xs text-zinc-500">
+                Insurance: {docs?.insuranceProvider ?? "—"} · Exp {docs?.insuranceExpiry ?? "—"}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => onApprove(p.uid)}
+                  className="rounded-xl bg-[#00FF88] px-4 py-2 text-sm font-bold text-black"
+                >
+                  ✅ APPROVE
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReject(p)}
+                  className="rounded-xl border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-400"
+                >
+                  ❌ REJECT
+                </button>
               </div>
             </div>
           );

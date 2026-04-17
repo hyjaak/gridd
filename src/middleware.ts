@@ -28,6 +28,7 @@ function isPublicPath(pathname: string) {
   if (pathname === "/") return true;
   if (pathname.startsWith("/login")) return true;
   if (pathname.startsWith("/signup")) return true;
+  if (pathname.startsWith("/verify-email")) return true;
   if (pathname.startsWith("/agreements")) return true;
   if (pathname.startsWith("/api")) return true;
   if (pathname.startsWith("/_next")) return true;
@@ -71,7 +72,15 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  if (!agr && pathname !== "/agreements") {
+  if (
+    !agr &&
+    pathname !== "/agreements" &&
+    pathname !== "/verify-email" &&
+    pathname !== "/driver-pending" &&
+    pathname !== "/driver-rejected" &&
+    pathname !== "/signup/driver-docs" &&
+    pathname !== "/signup/application-submitted"
+  ) {
     return NextResponse.redirect(new URL("/agreements", req.url));
   }
 

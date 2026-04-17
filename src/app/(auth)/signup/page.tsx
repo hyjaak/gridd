@@ -4,7 +4,6 @@ export const dynamic = "force-dynamic";
 
 import type React from "react";
 import { useMemo, useState } from "react";
-import { AddressInput } from "@/components/AddressInput";
 import { BackButton } from "@/components/BackButton";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -29,8 +28,6 @@ export default function SignupPage() {
   const [role, setRole] = useState<UserRole>("customer");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [serviceArea, setServiceArea] = useState("");
-
   const pwScore = useMemo(() => strength(password), [password]);
   const pwLabel = ["Too weak", "Weak", "Okay", "Strong", "Very strong"][pwScore] ?? "Too weak";
 
@@ -43,21 +40,9 @@ export default function SignupPage() {
       return;
     }
 
-    if (role === "driver" && !serviceArea.trim()) {
-      setError("Add your primary service area (city or full address).");
-      return;
-    }
-
     setLoading(true);
     try {
-      await signUp(
-        email,
-        password,
-        name,
-        role,
-        phone,
-        role === "driver" ? serviceArea.trim() : undefined,
-      );
+      await signUp(email, password, name, role, phone, undefined);
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to create account.";
@@ -75,7 +60,9 @@ export default function SignupPage() {
           Create your GRIDD account
         </h1>
         <p className="mt-1 text-sm text-[var(--sub)]">
-          Choose your role. You’ll complete required agreements next.
+          {role === "driver"
+            ? "Next you’ll upload driver documents, then verify your email."
+            : "You’ll verify your email, then complete required agreements."}
         </p>
       </div>
 
@@ -156,20 +143,6 @@ export default function SignupPage() {
               </button>
             </div>
           </div>
-
-          {role === "driver" ? (
-            <div className="space-y-2">
-              <label className="text-xs text-[var(--sub)]">Primary service area</label>
-              <AddressInput
-                value={serviceArea}
-                onChange={setServiceArea}
-                placeholder="Where you accept jobs (address or ZIP)"
-              />
-              <p className="text-xs text-[var(--sub)]">
-                Used to match you with nearby work. You can refine this later.
-              </p>
-            </div>
-          ) : null}
 
           {error ? <div className="text-sm text-[var(--accent)]">{error}</div> : null}
 

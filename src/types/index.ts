@@ -167,5 +167,42 @@ export type Provider = {
   /** Admin / ops — identity verified */
   verified?: boolean;
   suspendedUntil?: string;
+  email?: string;
+  /** Driver onboarding: CEO review pipeline */
+  verificationStatus?:
+    | "awaiting_documents"
+    | "pending"
+    | "approved"
+    | "rejected";
+  /** License, vehicle, insurance, profile — URLs + fields */
+  documents?: ProviderDocuments;
+  /** ISO string or Firestore Timestamp from client */
+  submittedAt?: string | unknown;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string | null;
+};
+
+/** Firestore `providers/{uid}.documents` */
+export type ProviderDocuments = {
+  licenseFront?: string;
+  licenseBack?: string;
+  insurance?: string;
+  profilePhoto?: string;
+  licenseNumber?: string;
+  licenseExpiry?: string;
+  licenseState?: string;
+  vehicleYear?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  licensePlate?: string;
+  plateState?: string;
+  insuranceProvider?: string;
+  policyNumber?: string;
+  insuranceExpiry?: string;
+  serviceZip?: string;
+  maxDistanceMiles?: number;
+  serviceIds?: string[];
 };
 
