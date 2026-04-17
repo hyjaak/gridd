@@ -8,11 +8,12 @@ const ITEMS = [
   { href: "/active", label: "Active", emoji: "🔥" },
   { href: "/driver/earnings", label: "Earnings", emoji: "💰" },
   { href: "/porch", label: "Porch", emoji: "🪑" },
-  { href: "/driver/profile", label: "Profile", emoji: "🚛" },
+  { href: "/profile", label: "Profile", emoji: "🚛" },
 ] as const;
 
 function activeFor(pathname: string, href: string) {
   if (href === "/jobs") return pathname === "/jobs" || pathname.startsWith("/driver/jobs");
+  if (href === "/profile") return pathname === "/profile";
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

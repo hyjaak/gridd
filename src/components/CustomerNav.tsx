@@ -9,10 +9,12 @@ const ITEMS = [
   { href: "/porch", label: "Porch", emoji: "🪑" },
   { href: "/wallet", label: "Wallet", emoji: "💰" },
   { href: "/history", label: "History", emoji: "📋" },
+  { href: "/profile", label: "Profile", emoji: "👤" },
 ] as const;
 
 function activeFor(pathname: string, href: string) {
   if (href === "/home") return pathname === "/home";
+  if (href === "/profile") return pathname === "/profile";
   return pathname === href || pathname.startsWith(`${href}?`) || pathname.startsWith(`${href}/`);
 }
 
@@ -21,7 +23,7 @@ export function CustomerNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-[var(--border)] bg-[#060606]/95 backdrop-blur">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-5 gap-1 px-4 py-2 text-xs text-[var(--sub)]">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-6 gap-1 px-2 py-2 text-xs text-[var(--sub)] sm:px-4">
         {ITEMS.map((item) => {
           const on = activeFor(pathname, item.href);
           return (
