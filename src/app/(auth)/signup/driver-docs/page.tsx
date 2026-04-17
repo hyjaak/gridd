@@ -20,6 +20,21 @@ import type { ProviderDocuments } from "@/types";
 const SERVICE_IDS = Object.keys(DRIVER_SERVICE_META);
 const YEARS = Array.from({ length: 2027 - 1985 }, (_, i) => String(2026 - i));
 
+/** Expiry YYYY-MM-DD must be on or after today (not expired). */
+function isOnOrAfterToday(ymd: string): boolean {
+  const parts = ymd.trim().split("-");
+  if (parts.length !== 3) return false;
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const day = Number(parts[2]);
+  if (!y || !m || !day) return false;
+  const expiry = new Date(y, m - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  expiry.setHours(0, 0, 0, 0);
+  return expiry.getTime() >= today.getTime();
+}
+
 async function uploadFile(file: File, path: string) {
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file);
@@ -82,28 +97,66 @@ export default function DriverDocsPage() {
     e.preventDefault();
     if (!user) return;
     setError(null);
-    if (!licenseFront || !licenseBack || !insuranceCard || !profilePhoto) {
-      setError("Please upload all required photos.");
+
+    if (!licenseNumber.trim()) {
+      setError("Please enter your driver's license number.");
       return;
     }
-    if (!licenseNumber.trim() || !licenseExpiry || !licenseState.trim()) {
-      setError("Complete license fields.");
+    if (!licenseExpiry.trim()) {
+      setError("Please enter your license expiration date.");
       return;
     }
-    if (!vehicleMake.trim() || !vehicleModel.trim() || !licensePlate.trim()) {
-      setError("Complete vehicle information.");
+    if (!isOnOrAfterToday(licenseExpiry)) {
+      setError("License expiration must be today or a future date (not expired).");
       return;
     }
-    if (!insuranceProvider.trim() || !policyNumber.trim() || !insuranceExpiry) {
-      setError("Complete insurance fields.");
+    if (!licenseState.trim()) {
+      setError("Please enter the state your license was issued in.");
       return;
     }
-    if (!serviceZip.trim()) {
-      setError("Enter your service area ZIP.");
+
+    if (!vehicleYear.trim()) {
+      setError("Please select your vehicle year.");
       return;
     }
+    if (!vehicleMake.trim()) {
+      setError("Please enter your vehicle make.");
+      return;
+    }
+    if (!vehicleModel.trim()) {
+      setError("Please enter your vehicle model.");
+      return;
+    }
+    if (!licensePlate.trim()) {
+      setError("Please enter your license plate number.");
+      return;
+    }
+
+    if (!insuranceProvider.trim()) {
+      setError("Please enter your insurance provider name.");
+      return;
+    }
+    if (!insuranceExpiry.trim()) {
+      setError("Please enter your insurance policy expiration date.");
+      return;
+    }
+    if (!isOnOrAfterToday(insuranceExpiry)) {
+      setError("Insurance expiration must be today or a future date (policy not expired).");
+      return;
+    }
+
     if (serviceIds.size === 0) {
-      setError("Select at least one service.");
+      setError("Please select at least one service you offer.");
+      return;
+    }
+
+    if (!serviceZip.trim()) {
+      setError("Please enter your service area ZIP code.");
+      return;
+    }
+
+    if (!licenseFront || !licenseBack || !insuranceCard || !profilePhoto) {
+      setError("Please upload license front, license back, insurance card, and profile photos.");
       return;
     }
 
@@ -133,7 +186,7 @@ export default function DriverDocsPage() {
         licensePlate: licensePlate.trim().toUpperCase(),
         plateState: plateState.trim(),
         insuranceProvider: insuranceProvider.trim(),
-        policyNumber: policyNumber.trim(),
+        policyNumber: policyNumber.trim() || undefined,
         insuranceExpiry,
         serviceZip: serviceZip.trim(),
         maxDistanceMiles: Math.min(200, Math.max(5, parseInt(maxMiles, 10) || 25)),
