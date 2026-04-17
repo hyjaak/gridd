@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { firebaseAuth } from "@/lib/firebase";
+import { LogoutButton } from "@/components/LogoutButton";
 import { money } from "@/lib/job-tracking";
 import { serviceMeta } from "@/lib/driver-service-meta";
 import type { Job } from "@/types";
@@ -67,7 +68,8 @@ export default function AdminDashboardPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Admin · Dashboard</h1>
           <p className="mt-1 text-sm text-zinc-400">Platform overview (fees visible to admins only)</p>
         </div>
-        <div className="flex gap-3 text-sm">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <LogoutButton className="rounded-lg border border-zinc-700 bg-zinc-900/60 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-[#00FF88] hover:text-zinc-100" />
           <Link className="rounded-lg border border-zinc-700 px-3 py-2 text-zinc-200 hover:border-[#00FF88]" href="/admin/security">
             Security
           </Link>

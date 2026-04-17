@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/Button";
 import { getUserRole } from "@/lib/userRole";
 import { useAuth, type GriddProfile } from "@/hooks/useAuth";
 import { CustomerNav } from "@/components/CustomerNav";
+import { LogoutButton } from "@/components/LogoutButton";
 import { NotificationBell } from "@/components/NotificationBell";
 import type { Provider } from "@/types";
 import type { Job } from "@/types";
@@ -183,6 +184,7 @@ export default function CustomerHomePage() {
             GRIDD
           </Link>
           <div className="flex items-center gap-3">
+            <LogoutButton />
             <NotificationBell />
             <div
               className="rounded-full border border-white/10 bg-[#0a0a0a] px-4 py-2 text-sm font-semibold text-[#FFB800]"

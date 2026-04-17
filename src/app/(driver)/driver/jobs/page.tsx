@@ -19,6 +19,7 @@ import { firebaseApp, firebaseAuth } from "@/lib/firebase";
 import { getUserRole } from "@/lib/userRole";
 import { useAuth } from "@/hooks/useAuth";
 import { DriverNav } from "@/components/DriverNav";
+import { LogoutButton } from "@/components/LogoutButton";
 import { money, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
 import { serviceMeta } from "@/lib/driver-service-meta";
 import { Button } from "@/components/ui/Button";
@@ -272,6 +273,7 @@ export default function DriverJobsPage() {
             <div className="text-sm text-[var(--text)]">{driverName}</div>
           </div>
           <div className="flex items-center gap-3">
+            <LogoutButton />
             <span className="text-xs text-[var(--sub)]">Status</span>
             <button
               type="button"

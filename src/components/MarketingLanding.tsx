@@ -187,12 +187,18 @@ export function MarketingLanding() {
             gridd.click
           </a>
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-4 text-[11px]">
-          <Link className="hover:text-white" href="/login">
-            Sign in
+        <div className="mx-auto mt-8 flex max-w-md flex-col items-stretch justify-center gap-3 sm:flex-row sm:gap-4">
+          <Link
+            href="/login"
+            className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-full border border-white bg-transparent px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-white/10"
+          >
+            Sign In
           </Link>
-          <Link className="hover:text-white" href="/agreements">
-            Agreements
+          <Link
+            href="/signup"
+            className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-full bg-[#00FF88] px-6 text-sm font-semibold text-black transition hover:opacity-90"
+          >
+            Get Started
           </Link>
         </div>
       </footer>
