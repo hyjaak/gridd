@@ -235,7 +235,7 @@ export default function CustomerHomePage() {
             </div>
           </Card>
           <Card className="p-4" style={{ borderColor: "#FFB800" }}>
-            <div className="text-xs text-[var(--sub)]">Points</div>
+            <div className="text-xs text-[var(--sub)]">Ditch Points</div>
             <div className="mt-1 text-lg font-semibold text-[#FFB800]">
               {authLoading ? "…" : points.toLocaleString()}
             </div>

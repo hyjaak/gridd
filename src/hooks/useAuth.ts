@@ -22,6 +22,7 @@ export type GriddProfile = {
   tier?: string;
   ditchTier?: string;
   zip?: string;
+  serviceArea?: string;
 };
 
 export function useAuth() {
@@ -72,6 +73,10 @@ export function useAuth() {
     };
   }, []);
 
-  return { user, profile, role, loading };
+  const isCustomer = role === "customer";
+  const isDriver = role === "driver";
+  const isAdmin = role === "admin";
+
+  return { user, profile, role, loading, isCustomer, isDriver, isAdmin };
 }
 

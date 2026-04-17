@@ -6,14 +6,15 @@ import {
   addDoc,
   collection,
   doc,
-  getFirestore,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
+  serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { firebaseApp } from "@/lib/firebase";
+import { db, firebaseApp } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -30,8 +31,16 @@ const FILTERS: Array<{ id: "all" | PorchPostType; label: string }> = [
   { id: "announcement", label: "📢 Announcements" },
 ];
 
-function timeAgo(iso: string) {
-  const t = new Date(iso).getTime();
+function timeAgo(iso: unknown) {
+  let t: number;
+  if (iso && typeof iso === "object" && "toDate" in iso && typeof (iso as { toDate: () => Date }).toDate === "function") {
+    t = (iso as { toDate: () => Date }).toDate().getTime();
+  } else if (typeof iso === "string") {
+    t = new Date(iso).getTime();
+  } else {
+    return "—";
+  }
+  if (!Number.isFinite(t)) return "—";
   const s = Math.floor((Date.now() - t) / 1000);
   if (s < 60) return `${s}s ago`;
   const m = Math.floor(s / 60);
@@ -57,12 +66,11 @@ export default function CustomerPorchPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [rating, setRating] = useState(5);
-  const [submitting, setSubmitting] = useState(false);
+  const [posting, setPosting] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!firebaseApp) return;
-    const db = getFirestore(firebaseApp);
     const q = query(collection(db, "porch"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
       q,
@@ -89,36 +97,59 @@ export default function CustomerPorchPage() {
     return posts.filter((p) => p.type === filter);
   }, [posts, filter]);
 
-  async function submitPost() {
-    if (!firebaseApp || !user) return;
-    const db = getFirestore(firebaseApp);
-    setSubmitting(true);
-    const authorName = profile?.name ?? user.email ?? "Neighbor";
-    const authorRole: PorchPost["authorRole"] =
-      role === "admin" ? "admin" : role === "driver" ? "driver" : "customer";
-    await addDoc(collection(db, "porch"), {
-      type: postType,
-      title: title.trim() || "Untitled",
-      body: body.trim(),
-      authorUid: user.uid,
-      authorName,
-      authorRole,
-      createdAt: new Date().toISOString(),
-      votes: postType === "debate" ? { yes: 0, no: 0 } : undefined,
-      likeUids: [],
-      commentCount: 0,
-      pinned: false,
-      rating: postType === "review" ? rating : undefined,
-    });
-    setSubmitting(false);
-    setComposerOpen(false);
-    setTitle("");
-    setBody("");
+  async function handlePost() {
+    if (!title.trim() || !body.trim()) {
+      alert("Please fill in title and content");
+      return;
+    }
+    if (!firebaseApp || !user) {
+      alert("Please sign in first");
+      return;
+    }
+
+    setPosting(true);
+    try {
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      const provSnap = await getDoc(doc(db, "providers", user.uid));
+      const pdata = userSnap.exists()
+        ? userSnap.data()
+        : provSnap.exists()
+          ? provSnap.data()
+          : null;
+      const authorName =
+        (pdata?.name as string | undefined) ?? profile?.name ?? user.email ?? "Neighbor";
+      const authorRole: PorchPost["authorRole"] =
+        role === "admin" ? "admin" : role === "driver" ? "driver" : "customer";
+
+      await addDoc(collection(db, "porch"), {
+        type: postType,
+        title: title.trim(),
+        body: body.trim(),
+        authorUid: user.uid,
+        authorName,
+        authorRole,
+        createdAt: serverTimestamp(),
+        votes: postType === "debate" ? { yes: 0, no: 0 } : undefined,
+        likeUids: [],
+        commentCount: 0,
+        pinned: false,
+        rating: postType === "review" ? rating : undefined,
+      });
+
+      setTitle("");
+      setBody("");
+      setPostType("post");
+      setComposerOpen(false);
+    } catch (err: unknown) {
+      console.error("Post failed:", err);
+      alert(err instanceof Error ? `Could not post: ${err.message}` : "Could not post.");
+    } finally {
+      setPosting(false);
+    }
   }
 
   async function toggleLike(post: PorchPost) {
     if (!firebaseApp || !user) return;
-    const db = getFirestore(firebaseApp);
     const ref = doc(db, "porch", post.id);
     const likes = new Set(post.likeUids ?? []);
     if (likes.has(user.uid)) likes.delete(user.uid);
@@ -128,7 +159,6 @@ export default function CustomerPorchPage() {
 
   async function vote(post: PorchPost, choice: "yes" | "no") {
     if (!firebaseApp || !user) return;
-    const db = getFirestore(firebaseApp);
     const postRef = doc(db, "porch", post.id);
     const ballotRef = doc(db, "porch", post.id, "votes", user.uid);
     await runTransaction(db, async (tx) => {
@@ -152,7 +182,6 @@ export default function CustomerPorchPage() {
 
   async function report(postId: string) {
     if (!firebaseApp || !user) return;
-    const db = getFirestore(firebaseApp);
     await addDoc(collection(db, "porchReports"), {
       postId,
       reporterUid: user.uid,
@@ -369,8 +398,11 @@ export default function CustomerPorchPage() {
               <Button variant="secondary" onClick={() => setComposerOpen(false)}>
                 Cancel
               </Button>
-              <Button disabled={submitting || !body.trim()} onClick={() => void submitPost()}>
-                {submitting ? "Posting…" : "Submit"}
+              <Button
+                disabled={posting || !body.trim() || !title.trim()}
+                onClick={() => void handlePost()}
+              >
+                {posting ? "Posting…" : "Submit"}
               </Button>
             </div>
           </Card>

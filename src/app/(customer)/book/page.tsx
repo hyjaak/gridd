@@ -11,6 +11,7 @@ import type { Provider } from "@/types";
 import type { DriverTier } from "@/types";
 import type { Urgency } from "@/types/booking";
 import { firebaseApp } from "@/lib/firebase";
+import { AddressInput } from "@/components/AddressInput";
 import { BackButton } from "@/components/BackButton";
 import { estimateCentsForService } from "@/lib/booking-estimate";
 import { useAuth } from "@/hooks/useAuth";
@@ -91,6 +92,7 @@ function CustomerBookInner() {
   const [providers, setProviders] = useState<MatchedProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [resolvedZip, setResolvedZip] = useState<string | undefined>();
 
   const meta = SERVICE_META[service];
 
@@ -170,7 +172,7 @@ function CustomerBookInner() {
           tier: "standard",
           status: "pending",
           city,
-          zip: profile?.zip,
+          zip: resolvedZip ?? profile?.zip,
           addressLine: addr,
           amountCents: estimate,
           providerPayoutCents: Math.round(estimate * 0.85),
@@ -191,7 +193,21 @@ function CustomerBookInner() {
         setBookingId(null);
       }
     },
-    [firebaseApp, user, addressForJob, profile?.name, profile?.zip, service, meta.label, form, urgency, estimate, notes, router],
+    [
+      firebaseApp,
+      user,
+      addressForJob,
+      profile?.name,
+      profile?.zip,
+      resolvedZip,
+      service,
+      meta.label,
+      form,
+      urgency,
+      estimate,
+      notes,
+      router,
+    ],
   );
 
   function Tab({ id }: { id: ServiceId }) {
@@ -382,11 +398,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="Street, city, ZIP"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="Street, city, ZIP"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -464,11 +483,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -531,11 +553,14 @@ function CustomerBookInner() {
                   </button>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -545,17 +570,24 @@ function CustomerBookInner() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <FieldLabel>Pickup address</FieldLabel>
-                      <Input
-                        value={String(form.pickup ?? "")}
-                        onChange={(e) => setForm((p) => ({ ...p, pickup: e.target.value }))}
-                      />
+                      <div className="mt-2">
+                        <AddressInput
+                          value={String(form.pickup ?? "")}
+                          onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
+                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                          placeholder="Pickup"
+                        />
+                      </div>
                     </div>
                     <div>
                       <FieldLabel>Destination</FieldLabel>
-                      <Input
-                        value={String(form.dropoff ?? "")}
-                        onChange={(e) => setForm((p) => ({ ...p, dropoff: e.target.value }))}
-                      />
+                      <div className="mt-2">
+                        <AddressInput
+                          value={String(form.dropoff ?? "")}
+                          onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
+                          placeholder="Drop-off"
+                        />
+                      </div>
                     </div>
                   </div>
                   <div>
@@ -610,11 +642,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -642,17 +677,24 @@ function CustomerBookInner() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <FieldLabel>Pickup address</FieldLabel>
-                      <Input
-                        value={String(form.pickup ?? "")}
-                        onChange={(e) => setForm((p) => ({ ...p, pickup: e.target.value }))}
-                      />
+                      <div className="mt-2">
+                        <AddressInput
+                          value={String(form.pickup ?? "")}
+                          onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
+                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                          placeholder="Pickup"
+                        />
+                      </div>
                     </div>
                     <div>
                       <FieldLabel>Delivery address</FieldLabel>
-                      <Input
-                        value={String(form.dropoff ?? "")}
-                        onChange={(e) => setForm((p) => ({ ...p, dropoff: e.target.value }))}
-                      />
+                      <div className="mt-2">
+                        <AddressInput
+                          value={String(form.dropoff ?? "")}
+                          onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
+                          placeholder="Delivery"
+                        />
+                      </div>
                     </div>
                   </div>
                 </>
@@ -692,11 +734,14 @@ function CustomerBookInner() {
                     </div>
                     <div>
                       <FieldLabel>Address</FieldLabel>
-                      <Input
-                        value={String(form.address ?? "")}
-                        onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                        placeholder="123 Main St"
-                      />
+                      <div className="mt-2">
+                        <AddressInput
+                          value={String(form.address ?? "")}
+                          onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                          placeholder="123 Main St"
+                        />
+                      </div>
                     </div>
                   </div>
                 </>
@@ -747,11 +792,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -783,11 +831,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -827,11 +878,14 @@ function CustomerBookInner() {
                   </div>
                   <div>
                     <FieldLabel>Address</FieldLabel>
-                    <Input
-                      value={String(form.address ?? "")}
-                      onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                      placeholder="123 Main St"
-                    />
+                    <div className="mt-2">
+                      <AddressInput
+                        value={String(form.address ?? "")}
+                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
+                        placeholder="123 Main St"
+                      />
+                    </div>
                   </div>
                 </>
               ) : null}

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import type React from "react";
 import { useMemo, useState } from "react";
+import { AddressInput } from "@/components/AddressInput";
 import { BackButton } from "@/components/BackButton";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +29,7 @@ export default function SignupPage() {
   const [role, setRole] = useState<UserRole>("customer");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serviceArea, setServiceArea] = useState("");
 
   const pwScore = useMemo(() => strength(password), [password]);
   const pwLabel = ["Too weak", "Weak", "Okay", "Strong", "Very strong"][pwScore] ?? "Too weak";
@@ -41,9 +43,21 @@ export default function SignupPage() {
       return;
     }
 
+    if (role === "driver" && !serviceArea.trim()) {
+      setError("Add your primary service area (city or full address).");
+      return;
+    }
+
     setLoading(true);
     try {
-      await signUp(email, password, name, role, phone);
+      await signUp(
+        email,
+        password,
+        name,
+        role,
+        phone,
+        role === "driver" ? serviceArea.trim() : undefined,
+      );
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "Failed to create account.";
@@ -144,8 +158,16 @@ export default function SignupPage() {
           </div>
 
           {role === "driver" ? (
-            <div className="text-xs text-[var(--sub)]">
-              Driver onboarding details can be collected after agreements.
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--sub)]">Primary service area</label>
+              <AddressInput
+                value={serviceArea}
+                onChange={setServiceArea}
+                placeholder="Where you accept jobs (address or ZIP)"
+              />
+              <p className="text-xs text-[var(--sub)]">
+                Used to match you with nearby work. You can refine this later.
+              </p>
             </div>
           ) : null}
 

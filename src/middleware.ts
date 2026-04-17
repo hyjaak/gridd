@@ -75,34 +75,40 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/home", req.url));
   }
 
-  const isAdmin = pathname.startsWith("/admin");
-  const isDriverArea =
-    pathname === "/jobs" ||
+  const isAdminPath = pathname.startsWith("/admin");
+  const isDriverApp =
+    pathname.startsWith("/jobs") ||
+    pathname.startsWith("/active") ||
     pathname.startsWith("/driver") ||
-    pathname === "/active";
-  const isCustomerArea = [
-    "/home",
-    "/book",
-    "/track",
-    "/wallet",
-    "/porch",
-    "/history",
-    "/checkout",
-  ].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+    pathname.startsWith("/earnings");
 
   const isSharedJobPath = pathname.startsWith("/messages");
+
+  /** Customer booking / wallet / order flows — not for drivers */
+  const driverForbiddenCustomerRoutes =
+    pathname === "/home" ||
+    pathname.startsWith("/book") ||
+    pathname.startsWith("/wallet") ||
+    pathname.startsWith("/checkout") ||
+    pathname === "/track" ||
+    pathname.startsWith("/track/") ||
+    pathname === "/history" ||
+    pathname.startsWith("/history/");
 
   if (role === "admin") return NextResponse.next();
 
   if (role === "customer") {
-    if (isAdmin || isDriverArea) {
+    if (isAdminPath || isDriverApp) {
       return NextResponse.redirect(new URL("/home", req.url));
     }
     return NextResponse.next();
   }
 
   if (role === "driver") {
-    if (isAdmin || (isCustomerArea && !isSharedJobPath)) {
+    if (isAdminPath) {
+      return NextResponse.redirect(new URL("/jobs", req.url));
+    }
+    if (driverForbiddenCustomerRoutes && !isSharedJobPath) {
       return NextResponse.redirect(new URL("/jobs", req.url));
     }
     return NextResponse.next();

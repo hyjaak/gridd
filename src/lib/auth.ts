@@ -34,6 +34,8 @@ type ProfileDoc = {
   role: UserRole;
   agreementsSigned: string[];
   createdAt: unknown;
+  /** Driver primary service area */
+  serviceArea?: string;
 };
 
 const REQUIRED_BASE = ["terms", "privacy", "zerotolerance"] as const;
@@ -104,6 +106,8 @@ export async function signUp(
   name: string,
   role: UserRole,
   phone?: string,
+  /** Driver service area (full address or ZIP) — optional */
+  serviceArea?: string,
 ) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   await updateProfile(cred.user, { displayName: name });
@@ -116,6 +120,9 @@ export async function signUp(
     role,
     agreementsSigned: [],
     createdAt: serverTimestamp(),
+    ...(role === "driver" && serviceArea?.trim()
+      ? { serviceArea: serviceArea.trim() }
+      : {}),
   };
 
   await setDoc(doc(db, "users", cred.user.uid), profile, { merge: true });
