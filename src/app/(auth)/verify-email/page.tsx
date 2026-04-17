@@ -28,14 +28,11 @@ function VerifyEmailInner() {
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
-    const t = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) return 0;
-        return prev - 1;
-      });
+    const id = setInterval(() => {
+      setResendCooldown((c) => (c <= 1 ? 0 : c - 1));
     }, 1000);
-    return () => clearInterval(t);
-  }, [resendCooldown]);
+    return () => clearInterval(id);
+  }, [resendCooldown > 0]);
 
   const handleResend = useCallback(async () => {
     if (resendCooldown > 0) return;
