@@ -156,10 +156,22 @@ export default function CustomerWalletPage() {
             <Button variant="secondary" onClick={() => {}}>
               Cash Out 💸
             </Button>
-            <Button variant="secondary" onClick={() => {}}>
-              Add to Card 💳
-            </Button>
           </div>
+          <button
+            type="button"
+            onClick={() => {}}
+            className="mx-auto mt-4 flex w-full max-w-md min-h-[52px] items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-base font-bold tracking-tight text-white shadow-lg transition hover:brightness-110 active:scale-[0.99]"
+            style={{
+              fontFamily: "var(--font-syne), ui-sans-serif, system-ui, sans-serif",
+              background: "linear-gradient(180deg, #ff6b00 0%, #ff9500 100%)",
+              boxShadow: "0 8px 24px rgba(255, 107, 0, 0.35)",
+            }}
+          >
+            <span className="text-xl leading-none" aria-hidden>
+              ⚡
+            </span>
+            Load GRIDD
+          </button>
         </section>
 
         <section className="mt-10">

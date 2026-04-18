@@ -1,6 +1,14 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { addDoc, collection, getFirestore } from "firebase/firestore";
 import { Card } from "@/components/ui/Card";
@@ -107,6 +115,43 @@ function CustomerBookInner() {
   const [providersLoading, setProvidersLoading] = useState(true);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [resolvedZip, setResolvedZip] = useState<string | undefined>();
+
+  type RoadsidePreviewMsg = { id: string; from: "provider" | "me"; name: string; text: string };
+  const [roadsideChatMsgs, setRoadsideChatMsgs] = useState<RoadsidePreviewMsg[]>([
+    {
+      id: "seed",
+      from: "provider",
+      name: "Jordan — Roadside",
+      text: "Hey, I’m here to help. Tell me your vehicle and what’s going on — I’ll line up pricing in chat.",
+    },
+  ]);
+  const [roadsideChatInput, setRoadsideChatInput] = useState("");
+  const roadsideChatWrapRef = useRef<HTMLDivElement>(null);
+  const roadsideChatInputRef = useRef<HTMLInputElement>(null);
+
+  const scrollToRoadsideChat = useCallback(() => {
+    roadsideChatWrapRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    window.setTimeout(() => roadsideChatInputRef.current?.focus(), 380);
+  }, []);
+
+  const sendRoadsidePreviewMsg = useCallback(() => {
+    const t = roadsideChatInput.trim();
+    if (!t) return;
+    const id = `u-${Date.now()}`;
+    setRoadsideChatMsgs((m) => [...m, { id, from: "me", name: "You", text: t }]);
+    setRoadsideChatInput("");
+    window.setTimeout(() => {
+      setRoadsideChatMsgs((m) => [
+        ...m,
+        {
+          id: `p-${Date.now()}`,
+          from: "provider",
+          name: "Jordan — Roadside",
+          text: "Thanks — I’ve got that. Final price depends on parts & time; we’ll confirm before you pay.",
+        },
+      ]);
+    }, 450);
+  }, [roadsideChatInput]);
 
   const meta = SERVICE_META[service];
 
@@ -972,7 +1017,21 @@ function CustomerBookInner() {
                           >
                             Provider will quote you directly.
                             <br />
-                            <span style={{ color: "#00FF88" }}>💬 Chat with provider for pricing</span>
+                            <button
+                              type="button"
+                              onClick={() => scrollToRoadsideChat()}
+                              style={{
+                                color: "#3dff7a",
+                                background: "none",
+                                border: "none",
+                                padding: 0,
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                                font: "inherit",
+                              }}
+                            >
+                              💬 Chat with provider for pricing
+                            </button>
                             <br />
                             After booking we&apos;ll open job chat right away.
                           </div>
@@ -980,6 +1039,89 @@ function CustomerBookInner() {
                       </div>
                     ))}
                   </div>
+
+                  <div
+                    id="roadside-booking-chat"
+                    ref={roadsideChatWrapRef}
+                    className="mb-4 rounded-[14px] border border-[#2a2a2a] bg-[#191919] p-4"
+                    style={{ fontFamily: "var(--font-dm-sans), ui-sans-serif, sans-serif" }}
+                  >
+                    <div
+                      className="mb-3 flex items-center justify-between gap-2"
+                      style={{ fontFamily: "var(--font-syne), ui-sans-serif, sans-serif" }}
+                    >
+                      <span className="text-[13px] font-bold text-[#888]">💬 Chat with provider</span>
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-[#ff6b00] underline-offset-2 hover:underline"
+                        onClick={() => scrollToRoadsideChat()}
+                      >
+                        Jump to input
+                      </button>
+                    </div>
+                    <div className="mb-3 max-h-[220px] space-y-3 overflow-y-auto pr-1">
+                      {roadsideChatMsgs.map((m) => (
+                        <div
+                          key={m.id}
+                          className={[
+                            "flex gap-2",
+                            m.from === "me" ? "flex-row-reverse" : "flex-row",
+                          ].join(" ")}
+                        >
+                          <div
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#2a2a2a] bg-[#0a0a0a] text-sm"
+                            aria-hidden
+                          >
+                            {m.from === "provider" ? "🛞" : "🙂"}
+                          </div>
+                          <div className={m.from === "me" ? "text-right" : "text-left"}>
+                            <div className="text-[11px] font-semibold text-[#888]">{m.name}</div>
+                            <div
+                              className={[
+                                "mt-1 inline-block max-w-[min(100%,280px)] rounded-[14px] border px-3 py-2 text-[13px] leading-snug",
+                                m.from === "me"
+                                  ? "border-[#3dff7a]/40 bg-[#3dff7a]/10 text-[#eeeeee]"
+                                  : "border-[#2a2a2a] bg-[#0a0a0a] text-[#eeeeee]",
+                              ].join(" ")}
+                            >
+                              {m.text}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 border-t border-[#2a2a2a] pt-3">
+                      <input
+                        ref={roadsideChatInputRef}
+                        type="text"
+                        value={roadsideChatInput}
+                        onChange={(e) => setRoadsideChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            sendRoadsidePreviewMsg();
+                          }
+                        }}
+                        placeholder="Message your provider…"
+                        className="min-h-[48px] flex-1 rounded-[22px] border border-[#2a2a2a] bg-[#111] px-4 text-sm text-[#eeeeee] outline-none placeholder:text-[#555] focus:border-[#ff6b00]/60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => sendRoadsidePreviewMsg()}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white transition hover:brightness-110"
+                        style={{
+                          fontFamily: "var(--font-syne), sans-serif",
+                          background: "linear-gradient(180deg, #ff6b00 0%, #ff9500 100%)",
+                          boxShadow: "0 4px 14px rgba(255, 107, 0, 0.35)",
+                        }}
+                        title="Send"
+                        aria-label="Send message"
+                      >
+                        ➤
+                      </button>
+                    </div>
+                  </div>
+
                   <BookingLocationSection
                     value={String(form.address ?? "")}
                     onChange={(v) => setForm((p) => ({ ...p, address: v }))}

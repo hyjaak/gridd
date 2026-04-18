@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -71,7 +71,9 @@ export default function CustomerPorchPage() {
   const [body, setBody] = useState("");
   const [rating, setRating] = useState(5);
   const [posting, setPosting] = useState(false);
+  const [droppedConfirm, setDroppedConfirm] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const fileAttachRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!firebaseApp) return;
@@ -101,15 +103,19 @@ export default function CustomerPorchPage() {
     return posts.filter((p) => p.type === filter);
   }, [posts, filter]);
 
-  async function handlePost() {
-    if (!title.trim() || !body.trim()) {
-      alert("Please fill in title and content");
-      return;
+  async function persistPorchPost(): Promise<boolean> {
+    const bodyText = body.trim();
+    if (!bodyText) {
+      alert("Write something first.");
+      return false;
     }
     if (!firebaseApp || !user) {
       alert("Please sign in first");
-      return;
+      return false;
     }
+
+    const effectiveTitle =
+      title.trim() || bodyText.slice(0, 80).replace(/\s+/g, " ").trim() || "Post";
 
     setPosting(true);
     try {
@@ -127,8 +133,8 @@ export default function CustomerPorchPage() {
 
       await addDoc(collection(db, "porch"), {
         type: postType,
-        title: title.trim(),
-        body: body.trim(),
+        title: effectiveTitle,
+        body: bodyText,
         authorUid: user.uid,
         authorName,
         authorRole,
@@ -140,16 +146,55 @@ export default function CustomerPorchPage() {
         rating: postType === "review" ? rating : undefined,
       });
 
+      return true;
+    } catch (err: unknown) {
+      console.error("Post failed:", err);
+      alert(err instanceof Error ? `Could not post: ${err.message}` : "Could not post.");
+      return false;
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function handleDropIt() {
+    if (posting) return;
+    const ok = await persistPorchPost();
+    if (!ok) return;
+    setDroppedConfirm(true);
+    window.setTimeout(() => {
+      setDroppedConfirm(false);
       setTitle("");
       setBody("");
       setPostType("post");
       setComposerOpen(false);
-    } catch (err: unknown) {
-      console.error("Post failed:", err);
-      alert(err instanceof Error ? `Could not post: ${err.message}` : "Could not post.");
-    } finally {
-      setPosting(false);
+    }, 1600);
+  }
+
+  function attachTag() {
+    setBody((b) => {
+      const t = b.trim();
+      return t ? `${t} #` : "#";
+    });
+  }
+
+  function attachLocationHint() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setBody((b) => `${b}${b ? "\n" : ""}📍 Location: (enable location in browser)`);
+      return;
     }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setBody(
+          (b) =>
+            `${b}${b ? "\n" : ""}📍 Location: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+        );
+      },
+      () => {
+        setBody((b) => `${b}${b ? "\n" : ""}📍 Location: unavailable — add details in text`);
+      },
+      { enableHighAccuracy: true, timeout: 12000 },
+    );
   }
 
   async function toggleLike(post: PorchPost) {
@@ -455,24 +500,79 @@ export default function CustomerPorchPage() {
                 </div>
               </div>
             ) : null}
+            <input
+              ref={fileAttachRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setBody((b) => `${b}${b ? "\n" : ""}📷 Attached: ${f.name}`);
+                }
+                e.target.value = "";
+              }}
+            />
             <div className="mt-3">
-              <div className="text-xs text-[var(--sub)]">Body</div>
-              <textarea
-                className="mt-1 min-h-[120px] w-full rounded-xl border border-[var(--border)] bg-[#0a0a0a] px-3 py-2 text-sm text-[var(--text)]"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="Write something…"
-              />
+              <div className="text-xs text-[#888]">What&apos;s happening?</div>
+              <div
+                className="relative mt-1 rounded-[14px] border border-[#2a2a2a] bg-[#111]"
+                style={{ fontFamily: "var(--font-dm-sans), ui-sans-serif, sans-serif" }}
+              >
+                <textarea
+                  className="min-h-[140px] w-full resize-none rounded-[14px] bg-transparent px-3 pb-16 pt-3 pr-36 text-sm text-[#eeeeee] outline-none placeholder:text-[#555]"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder="Job, shout-out, debate… drop it here."
+                />
+                <div className="absolute bottom-3 left-3 flex items-center gap-2 text-lg">
+                  <button
+                    type="button"
+                    title="Photo"
+                    className="rounded-lg p-1.5 text-[#888] transition hover:bg-white/5 hover:text-[#eeeeee]"
+                    onClick={() => fileAttachRef.current?.click()}
+                  >
+                    📷
+                  </button>
+                  <button
+                    type="button"
+                    title="Location"
+                    className="rounded-lg p-1.5 text-[#888] transition hover:bg-white/5 hover:text-[#eeeeee]"
+                    onClick={() => attachLocationHint()}
+                  >
+                    📍
+                  </button>
+                  <button
+                    type="button"
+                    title="Tag"
+                    className="rounded-lg p-1.5 text-[#888] transition hover:bg-white/5 hover:text-[#eeeeee]"
+                    onClick={() => attachTag()}
+                  >
+                    🏷️
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  disabled={posting || droppedConfirm}
+                  onClick={() => void handleDropIt()}
+                  className="absolute bottom-3 right-3 min-h-[44px] rounded-[22px] px-4 py-2 text-sm font-bold transition enabled:active:scale-[0.98] disabled:opacity-50"
+                  style={{
+                    fontFamily: "var(--font-syne), ui-sans-serif, sans-serif",
+                    background: droppedConfirm
+                      ? "linear-gradient(180deg, #1a3d2a 0%, #0f2a18 100%)"
+                      : "linear-gradient(180deg, #ff6b00 0%, #ff9500 100%)",
+                    color: droppedConfirm ? "#3dff7a" : "#fff",
+                    boxShadow: droppedConfirm ? "none" : "0 6px 18px rgba(255, 107, 0, 0.35)",
+                  }}
+                >
+                  {droppedConfirm ? "✓ Dropped!" : posting ? "…" : "Drop It 🎯"}
+                </button>
+              </div>
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex justify-end">
               <Button variant="secondary" onClick={() => setComposerOpen(false)}>
                 Cancel
-              </Button>
-              <Button
-                disabled={posting || !body.trim() || !title.trim()}
-                onClick={() => void handlePost()}
-              >
-                {posting ? "Posting…" : "Submit"}
               </Button>
             </div>
           </Card>
