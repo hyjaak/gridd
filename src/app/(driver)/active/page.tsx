@@ -286,7 +286,7 @@ export default function DriverActiveJobPage() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <Link href={`/messages/${job.id}`}>
+          <Link href={`/chat/${job.id}`}>
             <Button className="min-h-[48px] w-full" variant="secondary" type="button">
               Message customer
             </Button>

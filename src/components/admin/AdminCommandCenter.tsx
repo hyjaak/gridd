@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
@@ -1457,6 +1458,14 @@ function MessagesTab({
               >
                 📞 Call bridge
               </button>
+              <Link
+                href={`/chat/${msgJobId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg border border-[#00FF88]/40 px-2 py-1 text-xs text-[#00FF88] hover:bg-[#00FF88]/10"
+              >
+                💬 Full chat
+              </Link>
             </div>
             <div className="max-h-[45vh] flex-1 space-y-2 overflow-y-auto">
               {messages.map((m) => {
@@ -1475,6 +1484,14 @@ function MessagesTab({
                     ].join(" ")}
                   >
                     <div className="text-[10px] uppercase text-zinc-500">{m.senderRole}</div>
+                    {m.attachmentUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={m.attachmentUrl}
+                        alt=""
+                        className="mb-2 max-h-40 w-full rounded-lg object-cover"
+                      />
+                    ) : null}
                     <div>{m.text}</div>
                     <div className="mt-1 flex items-center gap-1 text-[10px] text-zinc-500">
                       {m.smsSent ? <MessageCircle className="h-3 w-3" /> : null}

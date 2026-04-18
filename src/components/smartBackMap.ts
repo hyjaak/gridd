@@ -35,6 +35,7 @@ export function smartBackDestination(pathname: string): string {
   if (pathname.startsWith("/track/") && pathname !== "/track") return "/track";
   if (pathname.startsWith("/checkout/")) return "/book";
   if (pathname.startsWith("/messages/")) return "/home";
+  if (pathname.startsWith("/chat/")) return "/home";
   if (pathname.startsWith("/admin/")) return "/admin/dashboard";
   return "/home";
 }

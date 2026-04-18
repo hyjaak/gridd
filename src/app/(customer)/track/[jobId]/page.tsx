@@ -347,7 +347,7 @@ export default function TrackJobPage() {
         </Card>
 
         <div className="grid grid-cols-2 gap-3">
-          <Link href={`/messages/${jobId}`}>
+          <Link href={`/chat/${jobId}`}>
             <Button className="w-full" variant="secondary" type="button">
               Message
             </Button>

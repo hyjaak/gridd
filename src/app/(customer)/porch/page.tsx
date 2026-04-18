@@ -225,13 +225,48 @@ export default function CustomerPorchPage() {
       </header>
 
       <div className="mx-auto w-full max-w-6xl px-6 pb-36 pt-6">
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setComposerOpen(true)}
-          className="w-full rounded-2xl border border-dashed border-[var(--border)] bg-[#0a0a0a] px-4 py-4 text-left text-sm text-[var(--sub)] hover:border-[#D4A574]"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setComposerOpen(true);
+            }
+          }}
+          style={{
+            background: "#111",
+            border: "1px solid #222",
+            borderRadius: 14,
+            padding: "14px 16px",
+            marginBottom: 16,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
         >
-          What&apos;s on your mind?
-        </button>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: "linear-gradient(135deg, #00FF88, #00CC66)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 16,
+              fontWeight: 900,
+              color: "#000",
+            }}
+          >
+            ✏️
+          </div>
+          <span style={{ color: "#555", fontSize: 13 }}>
+            What&apos;s on your mind? Share with the neighborhood...
+          </span>
+        </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           {FILTERS.map((f) => (
@@ -352,6 +387,33 @@ export default function CustomerPorchPage() {
           ))}
         </div>
       </div>
+
+      {!composerOpen ? (
+        <button
+          type="button"
+          aria-label="New post"
+          onClick={() => setComposerOpen(true)}
+          style={{
+            position: "fixed",
+            bottom: 80,
+            right: 20,
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #00FF88, #00CC66)",
+            border: "none",
+            boxShadow: "0 4px 20px #00FF8866",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 24,
+            zIndex: 100,
+          }}
+        >
+          ✏️
+        </button>
+      ) : null}
 
       {composerOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center">

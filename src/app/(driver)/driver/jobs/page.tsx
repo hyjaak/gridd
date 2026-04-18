@@ -234,7 +234,10 @@ export default function DriverJobsPage() {
           acceptedAt: now,
         });
         await notifyCustomer(job.id, "accepted");
-        router.push("/active");
+        const needsQuote = Boolean(
+          (job.bookingDetails as { needsQuote?: boolean } | undefined)?.needsQuote,
+        );
+        router.push(needsQuote ? `/chat/${job.id}` : "/active");
       } finally {
         setAccepting(null);
       }
@@ -398,6 +401,17 @@ export default function DriverJobsPage() {
                           <div className="text-xl font-bold text-[#00FF88]">{money(payout)}</div>
                         </div>
                       </div>
+                      {job.providerUid === user?.uid ? (
+                        <Link href={`/chat/${job.id}`} className="mb-2 block">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="min-h-[48px] w-full border-[#00FF88]/30 text-[#00FF88]"
+                          >
+                            💬 Message customer
+                          </Button>
+                        </Link>
+                      ) : null}
                       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                         <Button
                           type="button"

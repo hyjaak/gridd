@@ -11,7 +11,7 @@ import type { Provider } from "@/types";
 import type { DriverTier } from "@/types";
 import type { Urgency } from "@/types/booking";
 import { firebaseApp } from "@/lib/firebase";
-import { AddressInput } from "@/components/AddressInput";
+import { BookingLocationSection } from "@/components/booking/BookingLocationSection";
 import { BackButton } from "@/components/BackButton";
 import { CustomerNav } from "@/components/CustomerNav";
 import { estimateCentsForService } from "@/lib/booking-estimate";
@@ -96,6 +96,9 @@ function CustomerBookInner() {
     fenceLength: 40,
     fenceMaterial: "wood",
     gutterStories: 1,
+    roadsideType: "flat_tire",
+    evType: "tesla",
+    batteryPct: 15,
   });
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [notes, setNotes] = useState("");
@@ -121,6 +124,15 @@ function CustomerBookInner() {
     () => estimateCentsForService(service, form, urgency),
     [service, form, urgency],
   );
+
+  const isQuoteRoadside = useMemo(
+    () =>
+      service === "roadside" &&
+      (form.roadsideType === "tire_replace" || form.roadsideType === "tow"),
+    [service, form.roadsideType],
+  );
+
+  const estimateDisplay = isQuoteRoadside ? "Quote" : money(estimate);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,6 +187,8 @@ function CustomerBookInner() {
       try {
         const db = getFirestore(firebaseApp);
         const city = addr.includes(",") ? addr.split(",").slice(-2, -1)[0]?.trim() ?? "Local" : "Local";
+        const needsQuote = isQuoteRoadside;
+        const payCents = needsQuote ? 0 : estimate;
         const ref = await addDoc(collection(db, "jobs"), {
           customerUid: user.uid,
           customerName: profile?.name ?? user.email?.split("@")[0] ?? "Customer",
@@ -185,19 +199,19 @@ function CustomerBookInner() {
           city,
           zip: resolvedZip ?? profile?.zip,
           addressLine: addr,
-          amountCents: estimate,
-          providerPayoutCents: Math.round(estimate * 0.85),
+          amountCents: payCents,
+          providerPayoutCents: needsQuote ? 0 : Math.round(estimate * 0.85),
           providerUid: p.uid,
           providerName: p.name,
           providerRating: p.rating,
           providerPhotoUrl: p.photoUrl,
           createdAt: new Date().toISOString(),
-          bookingDetails: { ...form, urgency },
-          paymentStatus: "pending",
+          bookingDetails: { ...form, urgency, needsQuote: needsQuote || undefined },
+          paymentStatus: needsQuote ? "quote_pending" : "pending",
           payoutStatus: "none",
           notes: notes.trim() || undefined,
         });
-        router.push(`/track/${ref.id}`);
+        router.push(needsQuote ? `/chat/${ref.id}` : `/track/${ref.id}`);
       } catch (e) {
         alert(e instanceof Error ? e.message : "Could not create booking.");
       } finally {
@@ -218,6 +232,7 @@ function CustomerBookInner() {
       estimate,
       notes,
       router,
+      isQuoteRoadside,
     ],
   );
 
@@ -275,7 +290,7 @@ function CustomerBookInner() {
             <Card className="hidden min-w-[160px] p-4 lg:block">
               <div className="text-xs text-[var(--sub)]">Estimated</div>
               <div className="mt-1 text-2xl font-semibold" style={{ color: meta.color }}>
-                {money(estimate)}
+                {estimateDisplay}
               </div>
               <button
                 type="button"
@@ -286,7 +301,9 @@ function CustomerBookInner() {
               </button>
               {showBreakdown ? (
                 <div className="mt-2 text-xs text-[var(--sub)]">
-                  Base + size factors + {urgencyNote}. Your total is what you pay at checkout.
+                  {isQuoteRoadside
+                    ? "This job needs a provider quote. After booking we open chat so you can confirm pricing."
+                    : `Base + size factors + ${urgencyNote}. Your total is what you pay at checkout.`}
                 </div>
               ) : null}
             </Card>
@@ -411,17 +428,11 @@ function CustomerBookInner() {
                       </div>
                     ) : null}
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="Street, city, ZIP"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -496,17 +507,11 @@ function CustomerBookInner() {
                       })}
                     </div>
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -566,44 +571,29 @@ function CustomerBookInner() {
                     <div className="text-[var(--text)]">Stump removal</div>
                     <div className="text-xs text-[var(--sub)]">Toggle if needed</div>
                   </button>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
               {service === "ride" ? (
                 <>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <FieldLabel>Pickup address</FieldLabel>
-                      <div className="mt-2">
-                        <AddressInput
-                          value={String(form.pickup ?? "")}
-                          onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
-                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                          placeholder="Pickup"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>Destination</FieldLabel>
-                      <div className="mt-2">
-                        <AddressInput
-                          value={String(form.dropoff ?? "")}
-                          onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
-                          placeholder="Drop-off"
-                        />
-                      </div>
-                    </div>
+                    <BookingLocationSection
+                      title="📍 Pickup"
+                      value={String(form.pickup ?? "")}
+                      onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
+                      onResolvedZip={(zip) => setResolvedZip(zip)}
+                    />
+                    <BookingLocationSection
+                      title="📍 Destination"
+                      value={String(form.dropoff ?? "")}
+                      onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
+                      onResolvedZip={(zip) => setResolvedZip(zip)}
+                    />
                   </div>
                   <div>
                     <FieldLabel>Type</FieldLabel>
@@ -655,17 +645,11 @@ function CustomerBookInner() {
                       placeholder="800"
                     />
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -690,27 +674,18 @@ function CustomerBookInner() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <FieldLabel>Pickup address</FieldLabel>
-                      <div className="mt-2">
-                        <AddressInput
-                          value={String(form.pickup ?? "")}
-                          onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
-                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                          placeholder="Pickup"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <FieldLabel>Delivery address</FieldLabel>
-                      <div className="mt-2">
-                        <AddressInput
-                          value={String(form.dropoff ?? "")}
-                          onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
-                          placeholder="Delivery"
-                        />
-                      </div>
-                    </div>
+                    <BookingLocationSection
+                      title="📍 Pickup"
+                      value={String(form.pickup ?? "")}
+                      onChange={(v) => setForm((p) => ({ ...p, pickup: v }))}
+                      onResolvedZip={(zip) => setResolvedZip(zip)}
+                    />
+                    <BookingLocationSection
+                      title="📍 Delivery"
+                      value={String(form.dropoff ?? "")}
+                      onChange={(v) => setForm((p) => ({ ...p, dropoff: v }))}
+                      onResolvedZip={(zip) => setResolvedZip(zip)}
+                    />
                   </div>
                 </>
               ) : null}
@@ -747,17 +722,11 @@ function CustomerBookInner() {
                         placeholder="2"
                       />
                     </div>
-                    <div>
-                      <FieldLabel>Address</FieldLabel>
-                      <div className="mt-2">
-                        <AddressInput
-                          value={String(form.address ?? "")}
-                          onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                          onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                          placeholder="123 Main St"
-                        />
-                      </div>
-                    </div>
+                    <BookingLocationSection
+                      value={String(form.address ?? "")}
+                      onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                      onResolvedZip={(zip) => setResolvedZip(zip)}
+                    />
                   </div>
                 </>
               ) : null}
@@ -782,6 +751,11 @@ function CustomerBookInner() {
                       ))}
                     </div>
                   </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -805,17 +779,11 @@ function CustomerBookInner() {
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -844,17 +812,11 @@ function CustomerBookInner() {
                       <div className="text-[var(--text)]">Guard install</div>
                     </button>
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
-                    </div>
-                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -891,17 +853,221 @@ function CustomerBookInner() {
                       </div>
                     </div>
                   </div>
-                  <div>
-                    <FieldLabel>Address</FieldLabel>
-                    <div className="mt-2">
-                      <AddressInput
-                        value={String(form.address ?? "")}
-                        onChange={(v) => setForm((p) => ({ ...p, address: v }))}
-                        onResolved={({ zip }) => zip && setResolvedZip(zip)}
-                        placeholder="123 Main St"
-                      />
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
+                </>
+              ) : null}
+
+              {service === "roadside" ? (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#888" }}>
+                      🛞 What do you need?
+                    </div>
+                    {(
+                      [
+                        {
+                          id: "flat_tire",
+                          icon: "🛞",
+                          label: "Flat Tire Change",
+                          price: "$45–$65",
+                          desc: "Spare tire swap",
+                        },
+                        {
+                          id: "jump_start",
+                          icon: "🔋",
+                          label: "Jump Start",
+                          price: "$35–$50",
+                          desc: "Dead battery",
+                        },
+                        {
+                          id: "lockout",
+                          icon: "🔑",
+                          label: "Lockout Service",
+                          price: "$50–$75",
+                          desc: "Locked out of car",
+                        },
+                        {
+                          id: "fuel",
+                          icon: "⛽",
+                          label: "Fuel Delivery",
+                          price: "$25+fuel",
+                          desc: "Out of gas",
+                        },
+                        {
+                          id: "tire_replace",
+                          icon: "🔧",
+                          label: "Tire Replacement",
+                          price: "Quote",
+                          desc: "Need new tire — provider quotes",
+                        },
+                        {
+                          id: "tow",
+                          icon: "🚐",
+                          label: "Tow Coordination",
+                          price: "Quote",
+                          desc: "Need a tow truck",
+                        },
+                      ] as const
+                    ).map((item) => (
+                      <div key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => setForm((p) => ({ ...p, roadsideType: item.id }))}
+                          style={{
+                            width: "100%",
+                            background:
+                              form.roadsideType === item.id ? "#1a0a00" : "#111",
+                            border: `1px solid ${
+                              form.roadsideType === item.id ? "#FF6B0066" : "#222"
+                            }`,
+                            borderRadius: 12,
+                            padding: "12px 16px",
+                            marginBottom: 8,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{ fontSize: 22 }}>{item.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: 13,
+                                color:
+                                  form.roadsideType === item.id ? "#FF6B00" : "#eee",
+                              }}
+                            >
+                              {item.label}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>
+                              {item.desc}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: item.price === "Quote" ? "#FFB800" : "#00FF88",
+                            }}
+                          >
+                            {item.price}
+                          </div>
+                        </button>
+                        {item.price === "Quote" && form.roadsideType === item.id ? (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#aaa",
+                              marginBottom: 8,
+                              paddingLeft: 4,
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            Provider will quote you directly.
+                            <br />
+                            <span style={{ color: "#00FF88" }}>💬 Chat with provider for pricing</span>
+                            <br />
+                            After booking we&apos;ll open job chat right away.
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
+                </>
+              ) : null}
+
+              {service === "evcharge" ? (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#888" }}>
+                      ⚡ Vehicle Type
+                    </div>
+                    {(
+                      [
+                        { id: "tesla", label: "Tesla", icon: "🚗" },
+                        { id: "ford", label: "Ford EV", icon: "🚙" },
+                        { id: "rivian", label: "Rivian", icon: "🛻" },
+                        { id: "chevy", label: "Chevy EV", icon: "🚗" },
+                        { id: "other", label: "Other EV", icon: "⚡" },
+                      ] as const
+                    ).map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, evType: v.id }))}
+                        style={{
+                          background: form.evType === v.id ? "#001a2a" : "#111",
+                          border: `1px solid ${form.evType === v.id ? "#3B82F666" : "#222"}`,
+                          borderRadius: 10,
+                          padding: "10px 14px",
+                          marginRight: 8,
+                          marginBottom: 8,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <span>{v.icon}</span>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: form.evType === v.id ? "#3B82F6" : "#888",
+                          }}
+                        >
+                          {v.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#888" }}>
+                      🔋 Current Battery %
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={50}
+                      value={Number(form.batteryPct ?? 15)}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, batteryPct: Number(e.target.value) }))
+                      }
+                      style={{ width: "100%", accentColor: "#3B82F6" }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: "#555",
+                        marginTop: 4,
+                      }}
+                    >
+                      <span>0%</span>
+                      <span style={{ color: "#3B82F6", fontWeight: 700 }}>
+                        Current: {Number(form.batteryPct ?? 15)}%
+                      </span>
+                      <span>50%</span>
                     </div>
                   </div>
+                  <BookingLocationSection
+                    value={String(form.address ?? "")}
+                    onChange={(v) => setForm((p) => ({ ...p, address: v }))}
+                    onResolvedZip={(zip) => setResolvedZip(zip)}
+                  />
                 </>
               ) : null}
 
@@ -960,7 +1126,9 @@ function CustomerBookInner() {
                     >
                       {bookingId === p.uid
                         ? "Booking…"
-                        : `Book ${p.name} — ${money(estimate)}`}
+                        : isQuoteRoadside
+                          ? `Book ${p.name} — chat for quote`
+                          : `Book ${p.name} — ${money(estimate)}`}
                     </Button>
                   </div>
                 ))}
@@ -975,7 +1143,7 @@ function CustomerBookInner() {
           <div>
             <div className="text-[10px] uppercase tracking-wide text-[var(--sub)]">Live estimate</div>
             <div className="text-2xl font-bold" style={{ color: meta.color }}>
-              {money(estimate)}
+              {estimateDisplay}
             </div>
           </div>
           <button

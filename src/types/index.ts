@@ -142,6 +142,8 @@ export type JobChatMessage = {
   createdAt: string;
   smsSent?: boolean;
   readByUids?: string[];
+  /** Image shared in chat */
+  attachmentUrl?: string;
 };
 
 export type Provider = {

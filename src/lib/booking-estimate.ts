@@ -135,6 +135,34 @@ export function estimateCentsForService(
       mult *= plan === "business" ? 1.6 : plan === "monthly" ? 1.35 : plan === "pro" ? 1.2 : 1;
       break;
     }
+    case "roadside": {
+      const t = String(form.roadsideType ?? "flat_tire");
+      if (t === "tire_replace" || t === "tow") {
+        return urgencyFeeCents(urgency);
+      }
+      const bump: Record<string, number> = {
+        flat_tire: 1,
+        jump_start: 0.82,
+        lockout: 1.02,
+        fuel: 0.78,
+      };
+      mult *= bump[t] ?? 1;
+      break;
+    }
+    case "evcharge": {
+      const ev = String(form.evType ?? "other");
+      const evMap: Record<string, number> = {
+        tesla: 1,
+        ford: 1.02,
+        rivian: 1.05,
+        chevy: 1.02,
+        other: 1.08,
+      };
+      mult *= evMap[ev] ?? 1;
+      const bat = Math.min(50, Math.max(0, Number(form.batteryPct ?? 15)));
+      mult *= 1 + (50 - bat) / 120;
+      break;
+    }
     default:
       mult *= 1.05;
   }
