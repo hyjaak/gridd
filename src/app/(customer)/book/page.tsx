@@ -2,7 +2,6 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getUserRole } from "@/lib/userRole";
 import { addDoc, collection, getFirestore } from "firebase/firestore";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -16,6 +15,8 @@ import { AddressInput } from "@/components/AddressInput";
 import { BackButton } from "@/components/BackButton";
 import { CustomerNav } from "@/components/CustomerNav";
 import { estimateCentsForService } from "@/lib/booking-estimate";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
 
 type ServiceId = (typeof services)[number]["id"];
@@ -64,25 +65,14 @@ function tierRank(t: DriverTier | undefined): number {
 
 type MatchedProvider = Provider & { score: number; etaMinutes: number; distance: number };
 
+const BOOK_CUSTOMER = ["customer"] as const;
+
 function CustomerBookInner() {
   const router = useRouter();
   const params = useSearchParams();
+  const { loading: gateLoading, ok } = useRequireAuth([...BOOK_CUSTOMER]);
   const { user, profile } = useAuth();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "driver") router.replace("/jobs");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
   const validServiceIds = useMemo(() => new Set(services.map((s) => s.id)), []);
   const rawService = params.get("service") ?? "haul";
   const initialService = (validServiceIds.has(rawService as ServiceId) ? rawService : "haul") as ServiceId;
@@ -255,6 +245,10 @@ function CustomerBookInner() {
 
   function FieldLabel({ children }: { children: ReactNode }) {
     return <div className="text-xs text-[var(--sub)]">{children}</div>;
+  }
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
   }
 
   const urgencyNote =

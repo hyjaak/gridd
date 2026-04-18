@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useAuth } from "@/hooks/useAuth";
 
 const CHIP_SERVICES = [
   ["🚛", "Haul", "#FF6B00"],
@@ -22,104 +21,48 @@ const CHIP_SERVICES = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [showLanding, setShowLanding] = useState(false);
+  const { user, profile, role, loading } = useAuth();
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const userSnap = await getDoc(doc(db, "users", user.uid));
-        const provSnap = await getDoc(doc(db, "providers", user.uid));
+    if (loading) return;
+    if (!user) return;
+    if (!profile || !role) return;
 
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          const role = data.role as string | undefined;
-          const signed = (data.agreementsSigned as string[] | undefined) ?? [];
-          const required = ["terms", "privacy", "zerotolerance"];
-          if (!required.every((d) => signed.includes(d))) {
-            setLoading(false);
-            router.push("/agreements");
-            return;
-          }
-          if (role === "admin") {
-            setLoading(false);
-            router.push("/admin/dashboard");
-            return;
-          }
-          if (data.onboardingComplete !== true) {
-            setLoading(false);
-            router.push("/onboarding");
-            return;
-          }
-          if (role === "driver") {
-            setLoading(false);
-            router.push("/jobs");
-            return;
-          }
-          setLoading(false);
-          router.push("/home");
-          return;
-        }
-
-        if (provSnap.exists()) {
-          const pdata = provSnap.data();
-          const signed = (pdata.agreementsSigned as string[] | undefined) ?? [];
-          const required = ["terms", "privacy", "zerotolerance", "provider_agreement"];
-          if (!required.every((d) => signed.includes(d))) {
-            setLoading(false);
-            router.push("/agreements");
-            return;
-          }
-          if (pdata.onboardingComplete !== true) {
-            setLoading(false);
-            router.push("/onboarding");
-            return;
-          }
-          setLoading(false);
-          router.push("/jobs");
-          return;
-        }
-
-        setShowLanding(true);
-        setLoading(false);
-      } else {
-        setShowLanding(true);
-        setLoading(false);
-      }
-    });
-    return () => unsub();
-  }, [router]);
+    const required =
+      role === "driver"
+        ? (["terms", "privacy", "zerotolerance", "provider_agreement"] as const)
+        : (["terms", "privacy", "zerotolerance"] as const);
+    const signed = profile.agreementsSigned ?? [];
+    if (!required.every((d) => signed.includes(d))) {
+      router.replace("/agreements");
+      return;
+    }
+    if (role === "admin") {
+      router.replace("/admin/dashboard");
+      return;
+    }
+    if (profile.onboardingComplete !== true) {
+      router.replace("/onboarding");
+      return;
+    }
+    if (role === "driver") {
+      router.replace("/jobs");
+      return;
+    }
+    router.replace("/home");
+  }, [loading, user, profile, role, router]);
 
   if (loading) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#060606",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            border: "3px solid #00FF88",
-            borderTop: "3px solid transparent",
-            animation: "spin 0.8s linear infinite",
-          }}
-        />
-        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
-  if (!showLanding) return null;
+  if (user) {
+    return <LoadingScreen />;
+  }
 
   return (
     <div
+      className="page-wrapper"
       style={{
         minHeight: "100vh",
         background: "#060606",

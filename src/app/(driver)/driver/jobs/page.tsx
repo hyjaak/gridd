@@ -16,7 +16,8 @@ import {
   where,
 } from "firebase/firestore";
 import { firebaseApp, firebaseAuth } from "@/lib/firebase";
-import { getUserRole } from "@/lib/userRole";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
 import { DriverNav } from "@/components/DriverNav";
 import { LogoutButton } from "@/components/LogoutButton";
@@ -76,9 +77,12 @@ function Skeleton({ className }: { className: string }) {
   );
 }
 
+const DRIVER_ONLY = ["driver"] as const;
+
 export default function DriverJobsPage() {
   const router = useRouter();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { loading: gateLoading, ok, profile } = useRequireAuth([...DRIVER_ONLY]);
+  const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState<string | null>(null);
@@ -88,26 +92,11 @@ export default function DriverJobsPage() {
   const [myCompleted, setMyCompleted] = useState<Job[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "customer") router.replace("/home");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
-
-  useEffect(() => {
-    if (authLoading || !user || !profile) return;
+    if (gateLoading || !ok || !profile) return;
     if (profile.onboardingComplete !== true) {
       router.replace("/onboarding");
     }
-  }, [authLoading, user, profile, router]);
+  }, [gateLoading, ok, profile, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -270,6 +259,10 @@ export default function DriverJobsPage() {
   );
 
   const driverName = profile?.name ?? user?.email?.split("@")[0] ?? "Driver";
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
+  }
 
   return (
     <main className="min-h-full bg-[#060606] pb-40">

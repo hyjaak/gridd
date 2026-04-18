@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   collection,
@@ -15,6 +14,8 @@ import {
   where,
 } from "firebase/firestore";
 import { firebaseApp } from "@/lib/firebase";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -22,8 +23,6 @@ import type { WalletTx } from "@/types";
 import { NotificationBell } from "@/components/NotificationBell";
 import { CustomerNav } from "@/components/CustomerNav";
 import { BackButton } from "@/components/BackButton";
-import { getUserRole } from "@/lib/userRole";
-
 function money(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
@@ -46,26 +45,11 @@ const TIER_THRESHOLDS = [
 ];
 
 export default function CustomerWalletPage() {
-  const router = useRouter();
+  const { loading: gateLoading, ok } = useRequireAuth(["customer"]);
   const { user, profile } = useAuth();
   const [tx, setTx] = useState<WalletTx[]>([]);
   const [prefs, setPrefs] = useState<WalletPrefs | null>(null);
   const [flipped, setFlipped] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "driver") router.replace("/jobs");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
 
   const balanceCents = profile?.walletBalanceCents ?? 0;
   const points = profile?.points ?? 0;
@@ -142,6 +126,10 @@ export default function CustomerWalletPage() {
   const holder = prefs?.cardholderName ?? profile?.name ?? "Cardholder";
   const expiry = prefs?.cardExpiry ?? "12/28";
   const cvv = prefs?.cardCvv ?? "•••";
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
+  }
 
   return (
     <main className="min-h-full bg-[#060606]">

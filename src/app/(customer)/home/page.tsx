@@ -5,8 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   collection,
-  doc,
-  getDoc,
   getFirestore,
   limit,
   onSnapshot,
@@ -15,7 +13,8 @@ import {
 } from "firebase/firestore";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { getUserRole } from "@/lib/userRole";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth, type GriddProfile } from "@/hooks/useAuth";
 import { CustomerNav } from "@/components/CustomerNav";
 import { LogoutButton } from "@/components/LogoutButton";
@@ -82,37 +81,19 @@ function Skeleton({ className }: { className: string }) {
   );
 }
 
+const CUSTOMER_ONLY = ["customer"] as const;
+
 export default function CustomerHomePage() {
   const router = useRouter();
-  const { user, profile, loading: authLoading } = useAuth();
+  const { loading: gateLoading, ok, profile } = useRequireAuth([...CUSTOMER_ONLY]);
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "driver") {
-        router.replace("/jobs");
-        return;
-      }
-      if (r === "admin") {
-        router.replace("/admin/dashboard");
-        return;
-      }
-      if (firebaseApp && r === "customer") {
-        const snap = await getDoc(doc(getFirestore(firebaseApp), "users", u.uid));
-        if (cancelled) return;
-        if (snap.exists() && snap.data().onboardingComplete !== true) {
-          router.replace("/onboarding");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
+    if (gateLoading || !ok || !profile) return;
+    if (profile.onboardingComplete !== true) {
+      router.replace("/onboarding");
+    }
+  }, [gateLoading, ok, profile, router]);
   const firstName = (profile?.name ?? "").trim().split(/\s+/)[0] || "there";
   const points = profile?.points ?? 0;
   const walletBalanceCents = walletCentsFromProfile(profile);
@@ -184,6 +165,10 @@ export default function CustomerHomePage() {
     if (hour < 18) return "Good afternoon";
     return "Good evening";
   }, []);
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
+  }
 
   return (
     <main className="min-h-full bg-[#060606]">

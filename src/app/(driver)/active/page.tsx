@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   collection,
   doc,
@@ -15,11 +14,12 @@ import {
 } from "firebase/firestore";
 import { Camera, CheckCircle2 } from "lucide-react";
 import { firebaseApp, firebaseAuth } from "@/lib/firebase";
-import { getUserRole } from "@/lib/userRole";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { BackButton } from "@/components/BackButton";
 import { DriverNav } from "@/components/DriverNav";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
 import {
   driverNextStatus,
@@ -70,7 +70,7 @@ async function notifyCustomer(jobId: string, kind: string) {
 }
 
 export default function DriverActiveJobPage() {
-  const router = useRouter();
+  const { loading: gateLoading, ok } = useRequireAuth(["driver"]);
   const { user } = useAuth();
   const [job, setJob] = useState<Job | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -81,21 +81,6 @@ export default function DriverActiveJobPage() {
     tierBonus: number;
     total: number;
   } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "customer") router.replace("/home");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -213,9 +198,11 @@ export default function DriverActiveJobPage() {
     ? serviceMeta(job.serviceId, job.serviceName)
     : { icon: "✨", color: "#00FF88", label: "Job" };
 
+  if (gateLoading || !ok) return <LoadingScreen />;
+
   if (job === undefined) {
     return (
-      <main className="min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
+      <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
         <BackButton href="/jobs" />
         <div className="mx-auto max-w-xl animate-pulse rounded-2xl bg-white/5 p-24" />
         <DriverNav />
@@ -225,7 +212,7 @@ export default function DriverActiveJobPage() {
 
   if (!job) {
     return (
-      <main className="min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
+      <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
         <BackButton href="/jobs" />
         <div className="mx-auto max-w-xl space-y-4 text-center">
           <h1 className="text-xl font-semibold text-[var(--text)]">No active job</h1>
@@ -240,7 +227,7 @@ export default function DriverActiveJobPage() {
   }
 
   return (
-    <main className="min-h-full bg-[#060606] px-4 pb-40 pt-16 sm:pt-10">
+    <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-40 pt-16 sm:pt-10">
       <BackButton href="/jobs" />
 
       <div className="mx-auto max-w-xl space-y-5">

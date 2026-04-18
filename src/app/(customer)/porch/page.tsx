@@ -14,6 +14,8 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db, firebaseApp } from "@/lib/firebase";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireSignedIn } from "@/hooks/useRequireSignedIn";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -59,6 +61,7 @@ function roleBadge(role: PorchPost["authorRole"]) {
 }
 
 export default function CustomerPorchPage() {
+  const { loading: gateLoading, ok } = useRequireSignedIn();
   const { user, profile, role } = useAuth();
   const [posts, setPosts] = useState<PorchPost[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
@@ -197,6 +200,10 @@ export default function CustomerPorchPage() {
     } else {
       await navigator.clipboard.writeText(url);
     }
+  }
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
   }
 
   return (

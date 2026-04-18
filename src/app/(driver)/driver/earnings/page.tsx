@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   collection,
   doc,
@@ -13,7 +12,8 @@ import {
   where,
 } from "firebase/firestore";
 import { firebaseApp } from "@/lib/firebase";
-import { getUserRole } from "@/lib/userRole";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
 import { DriverNav } from "@/components/DriverNav";
 import { money, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
@@ -52,25 +52,10 @@ function jobsToNextTier(tier: DriverTier | undefined, completed: number): number
 }
 
 export default function DriverEarningsPage() {
-  const router = useRouter();
+  const { loading: gateLoading, ok } = useRequireAuth(["driver"]);
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [provider, setProvider] = useState<Provider | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "customer") router.replace("/home");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -156,6 +141,10 @@ export default function DriverEarningsPage() {
   const nextTier =
     tierIdx >= 0 && tierIdx < TIER_ORDER.length - 1 ? TIER_ORDER[tierIdx + 1] : null;
   const bankOk = Boolean(provider?.stripeConnectId || provider?.bankConnected);
+
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
+  }
 
   return (
     <main className="min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">

@@ -1,30 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { BackButton } from "@/components/BackButton";
 import { CustomerNav } from "@/components/CustomerNav";
-import { useAuth } from "@/hooks/useAuth";
-import { getUserRole } from "@/lib/userRole";
+import { LoadingScreen } from "@/components/LoadingScreen";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 export default function CustomerHistoryPage() {
-  const router = useRouter();
-  const { user } = useAuth();
+  const { loading: gateLoading, ok } = useRequireAuth(["customer"]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const u = user;
-      if (!u) return;
-      const r = await getUserRole(u.uid);
-      if (cancelled) return;
-      if (r === "driver") router.replace("/jobs");
-      else if (r === "admin") router.replace("/admin/dashboard");
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user, router]);
+  if (gateLoading || !ok) {
+    return <LoadingScreen />;
+  }
 
   return (
     <>
