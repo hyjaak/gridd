@@ -71,6 +71,8 @@ export type GriddProfile = {
   notifSmsDriver?: boolean;
   notifEmailDriver?: boolean;
   maxDistanceMiles?: number;
+  /** One-time product tour completed */
+  onboardingComplete?: boolean;
 };
 
 export function useAuth() {
@@ -167,6 +169,7 @@ export function useAuth() {
                 typeof data.maxDistanceMiles === "number"
                   ? data.maxDistanceMiles
                   : (data.documents as ProviderDocuments | undefined)?.maxDistanceMiles,
+              onboardingComplete: data.onboardingComplete === true,
             };
             setProfile(mapped);
             setLoading(false);

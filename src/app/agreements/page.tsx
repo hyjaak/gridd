@@ -398,24 +398,37 @@ export default function AgreementsPage() {
 
                 const userSnap = await getDoc(doc(db, "users", user.uid));
                 if (userSnap.exists()) {
-                  const r = userSnap.data().role as UserRole;
+                  const data = userSnap.data();
+                  const r = data.role as UserRole;
                   setClientSessionCookies(user.uid, r, true);
                   const synced = await syncSession();
                   if (!synced.ok) {
                     console.warn("[agreements] syncSession:", synced.error);
                   }
-                  if (r === "admin") router.push("/admin/dashboard");
-                  else if (r === "driver") router.push("/jobs");
+                  if (r === "admin") {
+                    router.push("/admin/dashboard");
+                    return;
+                  }
+                  if (data.onboardingComplete !== true) {
+                    router.push("/onboarding");
+                    return;
+                  }
+                  if (r === "driver") router.push("/jobs");
                   else router.push("/home");
                   return;
                 }
 
                 const provSnap = await getDoc(doc(db, "providers", user.uid));
                 if (provSnap.exists()) {
+                  const pdata = provSnap.data();
                   setClientSessionCookies(user.uid, "driver", true);
                   const synced = await syncSession();
                   if (!synced.ok) {
                     console.warn("[agreements] syncSession:", synced.error);
+                  }
+                  if (pdata.onboardingComplete !== true) {
+                    router.push("/onboarding");
+                    return;
                   }
                   router.push("/jobs");
                 }

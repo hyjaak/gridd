@@ -39,6 +39,8 @@ const SERVICE_META: Record<ServiceId, Omit<ServiceMeta, "id">> = {
   gutter: { icon: "🏠", color: "#A78BFA", label: "Gutter" },
   fence: { icon: "🔧", color: "#D97706", label: "Fence" },
   protect: { icon: "🛡️", color: "#EC4899", label: "Protect" },
+  roadside: { icon: "🛞", color: "#ef4444", label: "Roadside" },
+  evcharge: { icon: "⚡", color: "#3B82F6", label: "EV Charge" },
 };
 
 function money(cents: number) {
@@ -81,7 +83,9 @@ function CustomerBookInner() {
       cancelled = true;
     };
   }, [user, router]);
-  const initialService = (params.get("service") ?? "haul") as ServiceId;
+  const validServiceIds = useMemo(() => new Set(services.map((s) => s.id)), []);
+  const rawService = params.get("service") ?? "haul";
+  const initialService = (validServiceIds.has(rawService as ServiceId) ? rawService : "haul") as ServiceId;
 
   const [service, setService] = useState<ServiceId>(initialService);
   const [form, setForm] = useState<Record<string, unknown>>({

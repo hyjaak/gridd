@@ -78,7 +78,7 @@ function Skeleton({ className }: { className: string }) {
 
 export default function DriverJobsPage() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState<string | null>(null);
@@ -101,6 +101,13 @@ export default function DriverJobsPage() {
       cancelled = true;
     };
   }, [user, router]);
+
+  useEffect(() => {
+    if (authLoading || !user || !profile) return;
+    if (profile.onboardingComplete !== true) {
+      router.replace("/onboarding");
+    }
+  }, [authLoading, user, profile, router]);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;

@@ -15,6 +15,8 @@ const BASE_CENTS: Record<string, number> = {
   gutter: 4200,
   fence: 8000,
   protect: 3500,
+  roadside: 8500,
+  evcharge: 7500,
 };
 
 export function urgencyFeeCents(urgency: Urgency): number {

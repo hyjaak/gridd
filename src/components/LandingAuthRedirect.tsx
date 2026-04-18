@@ -31,13 +31,7 @@ export function LandingAuthRedirect() {
         return;
       }
 
-      const dest =
-        synced.role === "admin"
-          ? "/admin/dashboard"
-          : synced.role === "driver"
-            ? "/jobs"
-            : "/home";
-      router.replace(dest);
+      /* Session cookies restored — let `app/page.tsx` route to onboarding / home / jobs */
     });
 
     return () => unsub();

@@ -75,6 +75,18 @@ export const services = [
     description: "Security checks and neighborhood watch tasks.",
     category: "Safety",
   },
+  {
+    id: "roadside",
+    name: "Roadside",
+    description: "Flat tire, jump start, lockout, fuel.",
+    category: "Rescue",
+  },
+  {
+    id: "evcharge",
+    name: "EV Charge",
+    description: "Mobile charging for all EVs.",
+    category: "Rescue",
+  },
 ] as const;
 
 export const config = {

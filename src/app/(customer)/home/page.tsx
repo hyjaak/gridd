@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   collection,
+  doc,
+  getDoc,
   getFirestore,
   limit,
   onSnapshot,
@@ -98,6 +100,13 @@ export default function CustomerHomePage() {
       if (r === "admin") {
         router.replace("/admin/dashboard");
         return;
+      }
+      if (firebaseApp && r === "customer") {
+        const snap = await getDoc(doc(getFirestore(firebaseApp), "users", u.uid));
+        if (cancelled) return;
+        if (snap.exists() && snap.data().onboardingComplete !== true) {
+          router.replace("/onboarding");
+        }
       }
     })();
     return () => {
@@ -245,6 +254,84 @@ export default function CustomerHomePage() {
             </div>
           ))}
         </section>
+
+        {/* GRIDD Rescue — Emergency Services */}
+        <div
+          style={{
+            margin: "20px 0",
+            background: "linear-gradient(135deg, #1a0000, #0a0a0a)",
+            border: "1px solid #ef444433",
+            borderRadius: 16,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#ef4444",
+                boxShadow: "0 0 8px #ef4444",
+                animation: "gridd-rescue-blink 1s ease infinite",
+              }}
+            />
+            <span
+              style={{
+                color: "#ef4444",
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: 1,
+              }}
+            >
+              GRIDD RESCUE
+            </span>
+            <span style={{ color: "#555", fontSize: 11 }}>Emergency services</span>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => router.push("/book?service=roadside")}
+              style={{
+                background: "#0a0000",
+                border: "1px solid #ef444444",
+                borderRadius: 12,
+                padding: 14,
+                cursor: "pointer",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 28, marginBottom: 6 }}>🛞</div>
+              <div style={{ color: "#ef4444", fontWeight: 700, fontSize: 12 }}>Roadside</div>
+              <div style={{ color: "#555", fontSize: 10, marginTop: 2 }}>Flat tire, jump start, lockout</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.push("/book?service=evcharge")}
+              style={{
+                background: "#000a1a",
+                border: "1px solid #3B82F644",
+                borderRadius: 12,
+                padding: 14,
+                cursor: "pointer",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 28, marginBottom: 6 }}>⚡</div>
+              <div style={{ color: "#3B82F6", fontWeight: 700, fontSize: 12 }}>EV Charge</div>
+              <div style={{ color: "#555", fontSize: 10, marginTop: 2 }}>Tesla, Ford, Rivian & more</div>
+            </button>
+          </div>
+        </div>
 
         <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Card className="p-4" style={{ borderColor: "#FF6B00" }}>
