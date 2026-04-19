@@ -40,6 +40,13 @@ function nextFridayLabel(): string {
   return fri.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
+function walletCentsFromUser(p: { walletBalanceCents?: number; walletBalance?: number } | null) {
+  if (!p) return 0;
+  if (typeof p.walletBalanceCents === "number") return p.walletBalanceCents;
+  if (typeof p.walletBalance === "number") return Math.round(p.walletBalance * 100);
+  return 0;
+}
+
 export function DriverProfile() {
   const { user, profile } = useAuth();
   const db = useMemo(() => (firebaseApp ? getFirestore(firebaseApp) : null), []);
@@ -187,6 +194,27 @@ export function DriverProfile() {
             </Card>
           ))}
         </section>
+
+        <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
+          <h2 className="text-sm font-semibold text-zinc-200">GRIDD Wallet</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Balance + virtual card, points, and transaction history (same as the Wallet tab).
+          </p>
+          <p className="mt-3 font-mono text-2xl font-bold text-[#00FF88]">
+            {money(walletCentsFromUser(profile))}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/driver/wallet"
+              className="rounded-xl bg-[#00FF88] px-4 py-2 text-sm font-bold text-black"
+            >
+              Open wallet
+            </Link>
+            <Link href="/driver/earnings" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300">
+              Payouts &amp; bank
+            </Link>
+          </div>
+        </Card>
 
         {/* Tier progress */}
         <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>

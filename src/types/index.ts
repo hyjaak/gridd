@@ -78,6 +78,10 @@ export type Job = {
   bookingDetails?: Record<string, unknown>;
   /** Admin dispute / support — stop messaging */
   threadLocked?: boolean;
+  /** Customer unread chat messages (denormalized from chat) */
+  unreadCount?: number;
+  lastMessage?: string;
+  lastMessageAt?: string;
 };
 
 export type WalletTx = {
@@ -131,6 +135,8 @@ export type PorchPost = {
   commentCount?: number;
   jobId?: string;
   providerUid?: string;
+  /** Optional human-readable job / meetup location */
+  jobLocation?: string;
 };
 
 export type JobChatMessage = {
@@ -146,11 +152,33 @@ export type JobChatMessage = {
   attachmentUrl?: string;
 };
 
+export type DriverAccountStatus =
+  | "pending_review"
+  | "pending"
+  | "more_info_needed"
+  | "approved"
+  | "rejected";
+
 export type Provider = {
   uid: string;
   name: string;
   city: string;
   zip?: string;
+  /** All required uploads completed (hard gate) */
+  documentsSubmitted?: boolean;
+  /** Account gate — CEO-controlled lifecycle */
+  accountStatus?: DriverAccountStatus;
+  /** CEO approval flag — required with accountStatus approved */
+  approvedByCEO?: boolean;
+  approvedAt?: string | unknown;
+  approvedBy?: string;
+  rejectedAt?: string | unknown;
+  /** CEO note when more_info_needed */
+  requestNote?: string | null;
+  /** Explicit online flag (optional; `status` is primary for feed) */
+  isOnline?: boolean;
+  /** Current accepted job — one gig at a time */
+  activeJob?: string | null;
   /** Provider availability for matching */
   status?: "active" | "idle" | "busy" | "offline";
   rating: number;
@@ -185,11 +213,20 @@ export type Provider = {
   rejectionReason?: string | null;
 };
 
-/** Firestore `providers/{uid}.documents` */
+/** Firestore `providers/{uid}.documents` — URLs under Storage `drivers/{uid}/documents/` */
 export type ProviderDocuments = {
+  /** Government ID */
+  idFront?: string;
+  idBack?: string;
   licenseFront?: string;
   licenseBack?: string;
   insurance?: string;
+  /** Vehicle registration */
+  registration?: string;
+  /** Live selfie / verification */
+  selfie?: string;
+  /** Signed background check consent (image or PDF) */
+  backgroundConsent?: string;
   profilePhoto?: string;
   licenseNumber?: string;
   licenseExpiry?: string;

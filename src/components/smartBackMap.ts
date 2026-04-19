@@ -13,6 +13,7 @@ export const SMART_BACK_MAP: Record<string, string> = {
   "/active": "/jobs",
   "/driver/jobs": "/",
   "/driver/active": "/driver/jobs",
+  "/driver/wallet": "/driver/jobs",
   "/driver/earnings": "/driver/jobs",
   "/driver/profile": "/driver/jobs",
   "/admin/jobs": "/admin/dashboard",
