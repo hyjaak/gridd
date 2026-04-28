@@ -56,7 +56,10 @@ export async function syncSession(): Promise<SyncSessionResult> {
   const res = await fetch("/api/session/sync", {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
-  });
+  }).catch(() => null);
+  if (!res) {
+    return { ok: false, error: "Session sync temporarily unavailable. Please try again." };
+  }
   const data = (await res.json().catch(() => ({}))) as {
     ok?: boolean;
     error?: string;
