@@ -22,6 +22,18 @@ function agreementsComplete(role: UserRole, signed: string[]): boolean {
   return required.every((d) => signed.includes(d));
 }
 
+function sessionUnavailable() {
+  return {
+    ok: false as const,
+    error: "Session sync temporarily unavailable. Please try again.",
+    status: 503,
+  };
+}
+
+async function readJson<T>(res: Response): Promise<T> {
+  return (await res.json().catch(() => ({}))) as T;
+}
+
 function parseUserDocFromRest(json: { fields?: Record<string, unknown> }): {
   role: UserRole | null;
   agreementsSigned: string[];
@@ -56,11 +68,13 @@ async function syncWithoutAdmin(idToken: string): Promise<
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
     },
-  );
-  const lookupJson = (await lookupRes.json().catch(() => ({}))) as {
+  ).catch(() => null);
+  if (!lookupRes) return sessionUnavailable();
+
+  const lookupJson = await readJson<{
     users?: Array<{ localId?: string }>;
     error?: { message?: string };
-  };
+  }>(lookupRes);
   const uid = lookupJson.users?.[0]?.localId;
   if (!uid) {
     return {
@@ -73,13 +87,15 @@ async function syncWithoutAdmin(idToken: string): Promise<
   const usersUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
   const usersRes = await fetch(usersUrl, {
     headers: { Authorization: `Bearer ${idToken}` },
-  });
+  }).catch(() => null);
   let docJson: { fields?: Record<string, unknown> };
   let role: UserRole | null;
   let agreementsSigned: string[];
 
+  if (!usersRes) return sessionUnavailable();
+
   if (usersRes.ok) {
-    docJson = (await usersRes.json()) as { fields?: Record<string, unknown> };
+    docJson = await readJson<{ fields?: Record<string, unknown> }>(usersRes);
     const parsed = parseUserDocFromRest(docJson);
     role = parsed.role;
     agreementsSigned = parsed.agreementsSigned;
@@ -87,7 +103,9 @@ async function syncWithoutAdmin(idToken: string): Promise<
     const provUrl = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/providers/${uid}`;
     const provRes = await fetch(provUrl, {
       headers: { Authorization: `Bearer ${idToken}` },
-    });
+    }).catch(() => null);
+    if (!provRes) return sessionUnavailable();
+
     if (!provRes.ok) {
       return {
         ok: false,
@@ -95,7 +113,7 @@ async function syncWithoutAdmin(idToken: string): Promise<
         status: 400,
       };
     }
-    docJson = (await provRes.json()) as { fields?: Record<string, unknown> };
+    docJson = await readJson<{ fields?: Record<string, unknown> }>(provRes);
     const parsed = parseUserDocFromRest(docJson);
     role = parsed.role ?? "driver";
     agreementsSigned = parsed.agreementsSigned;
@@ -148,36 +166,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing token" }, { status: 401 });
   }
 
-  if (adminAuth && adminDb) {
-    const decoded = await adminAuth.verifyIdToken(token).catch(() => null);
-    if (!decoded?.uid) {
-      return NextResponse.json({ ok: false, error: "Invalid token" }, { status: 401 });
+  try {
+    if (adminAuth && adminDb) {
+      const decoded = await adminAuth.verifyIdToken(token).catch(() => null);
+      if (!decoded?.uid) {
+        return NextResponse.json({ ok: false, error: "Invalid token" }, { status: 401 });
+      }
+      const role = await getUserRole(decoded.uid);
+      if (!role) {
+        return NextResponse.json(
+          { ok: false, error: "Missing user profile — complete signup or contact support." },
+          { status: 400 },
+        );
+      }
+      const status = await hasRequiredAgreements(decoded.uid, role);
+      const res = NextResponse.json({ ok: true, role, agreementsOk: status.ok });
+      applySessionCookies(res, decoded.uid, role, status.ok);
+      return res;
     }
-    const role = await getUserRole(decoded.uid);
-    if (!role) {
+
+    const fallback = await syncWithoutAdmin(token);
+    if (!fallback.ok) {
       return NextResponse.json(
-        { ok: false, error: "Missing user profile — complete signup or contact support." },
-        { status: 400 },
+        { ok: false, error: fallback.error },
+        { status: fallback.status },
       );
     }
-    const status = await hasRequiredAgreements(decoded.uid, role);
-    const res = NextResponse.json({ ok: true, role, agreementsOk: status.ok });
-    applySessionCookies(res, decoded.uid, role, status.ok);
+    const res = NextResponse.json({
+      ok: true,
+      role: fallback.role,
+      agreementsOk: fallback.agreementsOk,
+    });
+    applySessionCookies(res, fallback.uid, fallback.role, fallback.agreementsOk);
     return res;
-  }
-
-  const fallback = await syncWithoutAdmin(token);
-  if (!fallback.ok) {
+  } catch {
+    const unavailable = sessionUnavailable();
     return NextResponse.json(
-      { ok: false, error: fallback.error },
-      { status: fallback.status },
+      { ok: false, error: unavailable.error },
+      { status: unavailable.status },
     );
   }
-  const res = NextResponse.json({
-    ok: true,
-    role: fallback.role,
-    agreementsOk: fallback.agreementsOk,
-  });
-  applySessionCookies(res, fallback.uid, fallback.role, fallback.agreementsOk);
-  return res;
 }
