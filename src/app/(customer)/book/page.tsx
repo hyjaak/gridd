@@ -26,6 +26,7 @@ import { estimateCentsForService } from "@/lib/booking-estimate";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuth } from "@/hooks/useAuth";
+import { stripUndefinedForFirestore } from "@/lib/firestore-sanitize";
 
 type ServiceId = (typeof services)[number]["id"];
 
@@ -234,28 +235,31 @@ function CustomerBookInner() {
         const city = addr.includes(",") ? addr.split(",").slice(-2, -1)[0]?.trim() ?? "Local" : "Local";
         const needsQuote = isQuoteRoadside;
         const payCents = needsQuote ? 0 : estimate;
-        const ref = await addDoc(collection(db, "jobs"), {
-          customerUid: user.uid,
-          customerName: profile?.name ?? user.email?.split("@")[0] ?? "Customer",
-          serviceId: service,
-          serviceName: meta.label,
-          tier: "standard",
-          status: "pending",
-          city,
-          zip: resolvedZip ?? profile?.zip,
-          addressLine: addr,
-          amountCents: payCents,
-          providerPayoutCents: needsQuote ? 0 : Math.round(estimate * 0.85),
-          providerUid: p.uid,
-          providerName: p.name,
-          providerRating: p.rating,
-          providerPhotoUrl: p.photoUrl,
-          createdAt: new Date().toISOString(),
-          bookingDetails: { ...form, urgency, needsQuote: needsQuote || undefined },
-          paymentStatus: needsQuote ? "quote_pending" : "pending",
-          payoutStatus: "none",
-          notes: notes.trim() || undefined,
-        });
+        const ref = await addDoc(
+          collection(db, "jobs"),
+          stripUndefinedForFirestore({
+            customerUid: user.uid,
+            customerName: profile?.name ?? user.email?.split("@")[0] ?? "Customer",
+            serviceId: service,
+            serviceName: meta.label,
+            tier: "standard",
+            status: "pending",
+            city,
+            zip: resolvedZip ?? profile?.zip,
+            addressLine: addr,
+            amountCents: payCents,
+            providerPayoutCents: needsQuote ? 0 : Math.round(estimate * 0.85),
+            providerUid: p.uid,
+            providerName: p.name,
+            providerRating: p.rating,
+            providerPhotoUrl: p.photoUrl,
+            createdAt: new Date().toISOString(),
+            bookingDetails: { ...form, urgency, needsQuote: needsQuote || undefined },
+            paymentStatus: needsQuote ? "quote_pending" : "pending",
+            payoutStatus: "none",
+            notes: notes.trim() || undefined,
+          }),
+        );
         router.push(needsQuote ? `/chat/${ref.id}` : `/track/${ref.id}`);
       } catch (e) {
         alert(e instanceof Error ? e.message : "Could not create booking.");
