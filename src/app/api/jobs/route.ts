@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { listRecentJobsForCustomer } from "@/lib/db";
+import { stripUndefinedForFirestore } from "@/lib/firestore-sanitize";
 import type { Job, JobStatus, ServiceTier } from "@/types";
 
 function bearerToken(req: Request) {
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
   const tier: ServiceTier = body?.tier ?? "standard";
   const status: JobStatus = body?.status ?? "pending";
 
-  const job: Job = {
+  const job = stripUndefinedForFirestore<Job>({
     id,
     customerUid: decoded.uid,
     serviceId,
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
     paymentStatus: "pending",
     payoutStatus: "none",
     zip: body?.zip,
-  };
+  });
 
   const extra: Record<string, unknown> = {};
   if (body?.notes) extra.notes = body.notes;
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
   await adminDb
     .collection("jobs")
     .doc(id)
-    .set({ ...job, ...extra });
+    .set(stripUndefinedForFirestore({ ...job, ...extra }));
 
   return NextResponse.json({ ok: true, jobId: id, job });
 }
