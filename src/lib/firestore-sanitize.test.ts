@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { stripUndefinedForFirestore } from "./firestore-sanitize.ts";
+
+const { stripUndefinedForFirestore } = (await import(
+  new URL("./firestore-sanitize.ts", import.meta.url).href
+)) as typeof import("./firestore-sanitize");
 
 test("stripUndefinedForFirestore removes undefined object fields recursively", () => {
   assert.deepEqual(
