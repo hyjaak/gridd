@@ -3,10 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { CEO_UID } from "@/lib/constants";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { LoadingScreen } from "@/components/LoadingScreen";
-
-const CEO_UID = "51hByaxOO4NTrTbIndZ4uRUhKhU2";
 
 type JobStatus = "request" | "quoted" | "accepted" | "assigned" | "in_progress" | "proof" | "paid" | "declined" | "cancelled";
 type JobType = "delivery" | "errand" | "hauling";
