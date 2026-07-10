@@ -1,0 +1,61 @@
+// Merge this block into your existing `match /databases/{database}/documents { ... }`
+// (do not replace your full rules file — keep rules for `jobs`, `users`, `porch`, etc.)
+
+    function jobData(jobId) {
+      return get(/databases/$(database)/documents/jobs/$(jobId)).data;
+    }
+
+    function jobExists(jobId) {
+      return exists(/databases/$(database)/documents/jobs/$(jobId));
+    }
+
+    function previewOwnerUid(jobId) {
+      return jobId.replace('preview_', '');
+    }
+
+    function isPreviewChat(jobId) {
+      return jobId.matches('preview_.+');
+    }
+
+    function isJobChatParticipant(jobId) {
+      return jobExists(jobId)
+        && request.auth != null
+        && (jobData(jobId).customerUid == request.auth.uid
+            || jobData(jobId).providerUid == request.auth.uid);
+    }
+
+    function isPreviewChatParticipant(jobId) {
+      return request.auth != null
+        && isPreviewChat(jobId)
+        && previewOwnerUid(jobId) == request.auth.uid;
+    }
+
+    match /chats/{jobId}/messages/{messageId} {
+      allow read: if request.auth != null && (
+        isPreviewChatParticipant(jobId)
+        || isJobChatParticipant(jobId)
+      );
+
+      allow create: if request.auth != null && (
+        (
+          isPreviewChat(jobId)
+          && isPreviewChatParticipant(jobId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.role == 'user'
+        )
+        || (
+          !isPreviewChat(jobId)
+          && jobExists(jobId)
+          && isJobChatParticipant(jobId)
+          && request.resource.data.senderId == request.auth.uid
+          && (request.resource.data.role == 'user' || request.resource.data.role == 'provider')
+        )
+      );
+
+      allow update: if request.auth != null && (
+        isPreviewChatParticipant(jobId)
+        || isJobChatParticipant(jobId)
+      );
+
+      allow delete: if false;
+    }

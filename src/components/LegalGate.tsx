@@ -60,7 +60,7 @@ export function LegalGate() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-zinc-500">
               Already have an account?{" "}
-              <Link className="underline underline-offset-4" href="/login">
+              <Link className="underline underline-offset-4" href="/?modal=login">
                 Log in
               </Link>
             </div>

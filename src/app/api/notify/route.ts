@@ -27,9 +27,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
     const actor = await getUser(uid);
-    const isAdmin = actor?.role === "admin";
+    const ur = actor?.role as string | undefined;
+    const isCEO = ur === "ceo" || ur === "admin";
     const isSelf = uid === body.userId;
-    if (!isAdmin && !isSelf) {
+    if (!isCEO && !isSelf) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
   }

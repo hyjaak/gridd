@@ -1,4 +1,4 @@
-/** Shared service visuals for driver (and admin) job cards */
+/** Shared service visuals for driver (and admin) job cards — keep aligned with `constants/services` + pricing keys. */
 export const DRIVER_SERVICE_META: Record<
   string,
   { icon: string; color: string; label: string }
@@ -14,6 +14,18 @@ export const DRIVER_SERVICE_META: Record<
   gutter: { icon: "🏠", color: "#A78BFA", label: "Gutter" },
   fence: { icon: "🔧", color: "#D97706", label: "Fence" },
   protect: { icon: "🛡️", color: "#EC4899", label: "Protect" },
+  roadside: { icon: "🚗", color: "#ef4444", label: "Roadside Help" },
+  evcharge: { icon: "⚡", color: "#3B82F6", label: "EV Charge" },
+};
+
+/** Roadside job sub-types (stored on `bookingDetails.roadsideType`) — filter / labels */
+export const ROADSIDE_SUBTYPE_LABELS: Record<string, string> = {
+  flat_tire: "Tire",
+  lockout: "Lockout",
+  fuel: "Fuel Delivery",
+  tow: "Tow",
+  jump: "Jump start",
+  other: "Roadside",
 };
 
 export function serviceMeta(serviceId: string, serviceName: string) {

@@ -189,7 +189,7 @@ export function MarketingLanding() {
         </p>
         <div className="mx-auto mt-8 flex max-w-md flex-col items-stretch justify-center gap-3 sm:flex-row sm:gap-4">
           <Link
-            href="/login"
+            href="/?modal=login"
             className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-full border border-white bg-transparent px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-white/10"
           >
             Sign In

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   const user = await getUser(decoded.uid);
-  const role = user?.role;
+  const r = user?.role as string | undefined;
 
   const body = (await req.json().catch(() => null)) as {
     jobId?: string;
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 });
   }
 
-  if (role !== "admin") {
+  if (r !== "ceo" && r !== "admin") {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 

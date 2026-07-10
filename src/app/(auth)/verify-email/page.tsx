@@ -178,7 +178,7 @@ function VerifyEmailInner() {
 
         <button
           type="button"
-          onClick={() => router.push("/login")}
+          onClick={() => router.push("/?modal=login")}
           style={{
             background: "linear-gradient(135deg, #00FF88, #00CC66)",
             color: "#000",
@@ -195,7 +195,7 @@ function VerifyEmailInner() {
         </button>
       </div>
 
-      <Link href="/login" className="mt-8 text-sm font-medium text-[#00FF88] hover:underline">
+      <Link href="/?modal=login" className="mt-8 text-sm font-medium text-[#00FF88] hover:underline">
         Back to sign in
       </Link>
 

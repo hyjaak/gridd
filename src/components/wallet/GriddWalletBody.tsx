@@ -1,13 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { money, type GriddWalletData } from "@/hooks/useGriddWalletData";
+import { LoadGriddSheet } from "@/components/wallet/LoadGriddSheet";
+import { SendGriddSheet } from "@/components/wallet/SendGriddSheet";
+import { CashOutGriddSheet } from "@/components/wallet/CashOutGriddSheet";
 
 export type GriddWalletBodyProps = GriddWalletData & {
   walletUnlocked: boolean;
   /** e.g. drivers: `/driver/earnings` for bank / payouts */
   cashOutHref?: string;
+  /** Path for Stripe `return_url` after wallet load (e.g. `/wallet`, `/driver/wallet`) */
+  loadReturnPath?: string;
+  /** Driver wallet screen: Pay With row + virtual card badge/toast treatment */
+  driverWallet?: boolean;
+  /** Demo driver — show balance but lock load / send / cash out until fully approved */
+  demoWalletRestricted?: boolean;
 };
 
 export function GriddWalletBody({
@@ -18,13 +28,21 @@ export function GriddWalletBody({
   progressToNext,
   tx,
   prefs,
-  flipped,
-  setFlipped,
-  toggleWalletFlag,
+  flipped: _flipped,
+  setFlipped: _setFlipped,
+  toggleWalletFlag: _toggleWalletFlag,
   profileName,
   walletUnlocked,
   cashOutHref,
+  loadReturnPath = "/wallet",
+  driverWallet = false,
+  demoWalletRestricted = false,
 }: GriddWalletBodyProps) {
+  const canUseStripeWallet = walletUnlocked && !demoWalletRestricted;
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [cashOutOpen, setCashOutOpen] = useState(false);
+  const [virtualCardTapToast, setVirtualCardTapToast] = useState(false);
   const last4 = prefs?.virtualCardLast4 ?? "4242";
   const holder = prefs?.cardholderName ?? profileName ?? "Cardholder";
   const expiry = prefs?.cardExpiry ?? "12/28";
@@ -32,6 +50,23 @@ export function GriddWalletBody({
 
   return (
     <div className="relative mx-auto w-full max-w-6xl px-6 pb-24 pt-8">
+      <LoadGriddSheet
+        open={loadOpen}
+        onClose={() => setLoadOpen(false)}
+        returnPath={loadReturnPath}
+        walletUnlocked={canUseStripeWallet}
+      />
+      <SendGriddSheet
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        balanceCents={balanceCents}
+      />
+      <CashOutGriddSheet
+        open={cashOutOpen}
+        onClose={() => setCashOutOpen(false)}
+        balanceCents={balanceCents}
+        returnPath={loadReturnPath}
+      />
       {!walletUnlocked ? (
         <div className="mb-6 rounded-xl border border-amber-500/35 bg-amber-950/35 px-4 py-3 text-center">
           <p className="text-sm font-medium text-amber-100">
@@ -41,24 +76,53 @@ export function GriddWalletBody({
             Balance and history are visible; Load GRIDD, send, and cash out unlock when approved.
           </p>
         </div>
+      ) : demoWalletRestricted ? (
+        <div className="mb-6 rounded-xl border border-[#ff6b00]/35 bg-[#2a1500]/50 px-4 py-3 text-center">
+          <p className="text-sm font-medium text-orange-100">
+            💰 Unlock {money(balanceCents)} — Submit docs to cash out and transfer. Your trial earnings are real.
+          </p>
+        </div>
+      ) : null}
+
+      {virtualCardTapToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed bottom-28 left-1/2 z-[100] w-[min(92vw,22rem)] -translate-x-1/2 rounded-xl border border-white/15 bg-[#141414] px-4 py-3 text-center text-sm font-medium text-[var(--text)] shadow-xl"
+        >
+          Virtual card launching soon 🔥
+        </div>
       ) : null}
 
       <div>
         <section className="text-center">
           <div className="text-5xl font-bold tracking-tight text-[#00FF88]">{money(balanceCents)}</div>
-          <div className="mt-2 text-sm text-[var(--sub)]">+ 2% annual interest</div>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-[var(--sub)]">
+            <span>+ 2% annual interest</span>
+            <span className="rounded-full bg-black px-2.5 py-0.5 text-[10px] font-semibold text-[#ff6b00]">
+              Coming soon
+            </span>
+          </div>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button
               variant="secondary"
               onClick={() => {
                 if (!walletUnlocked) return;
-                window.alert("Send to neighbors and contacts — coming in a future update.");
+                if (demoWalletRestricted) {
+                  window.alert("Send is unavailable in demo mode. Submit documents to go fully live.");
+                  return;
+                }
+                setSendOpen(true);
               }}
-              disabled={!walletUnlocked}
+              disabled={!walletUnlocked || demoWalletRestricted}
             >
               Send 📤
             </Button>
-            {cashOutHref && walletUnlocked ? (
+            {demoWalletRestricted && walletUnlocked ? (
+              <Button variant="secondary" type="button" disabled className="max-w-[min(100%,20rem)] text-left">
+                💰 Submit documents to unlock your {money(balanceCents)} earnings
+              </Button>
+            ) : cashOutHref && walletUnlocked ? (
               <Button variant="secondary" asChild href={cashOutHref}>
                 Cash Out 💸
               </Button>
@@ -67,7 +131,7 @@ export function GriddWalletBody({
                 variant="secondary"
                 onClick={() => {
                   if (!walletUnlocked) return;
-                  window.alert("Cash out and bank settings — use Wallet in your profile menu.");
+                  setCashOutOpen(true);
                 }}
                 disabled={!walletUnlocked}
               >
@@ -77,11 +141,8 @@ export function GriddWalletBody({
           </div>
           <button
             type="button"
-            onClick={() => {
-              if (!walletUnlocked) return;
-              window.alert("Add funds to your GRIDD balance — payment integration coming soon.");
-            }}
-            disabled={!walletUnlocked}
+            onClick={() => canUseStripeWallet && setLoadOpen(true)}
+            disabled={!canUseStripeWallet}
             className="mx-auto mt-4 flex w-full max-w-md min-h-[52px] items-center justify-center gap-2 rounded-[22px] px-5 py-3.5 text-base font-bold tracking-tight text-white shadow-lg transition hover:brightness-110 active:scale-[0.99] disabled:opacity-50"
             style={{
               fontFamily: "var(--font-syne), ui-sans-serif, system-ui, sans-serif",
@@ -98,18 +159,45 @@ export function GriddWalletBody({
 
         <section className="mt-10">
           <div className="text-sm font-semibold text-[var(--text)]">Virtual Card</div>
-          <button
-            type="button"
-            onClick={() => walletUnlocked && setFlipped((f) => !f)}
-            disabled={!walletUnlocked}
-            className="mt-3 w-full max-w-md perspective-[1000px] text-left outline-none disabled:opacity-50"
-            style={{ perspective: "1000px" }}
-          >
+          <div className="relative mt-3 w-full max-w-md">
+            <span
+              className="pointer-events-none"
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                zIndex: 30,
+                background: "rgba(0,0,0,0.6)",
+                color: "#ff6b00",
+                fontSize: 10,
+                fontWeight: 800,
+                padding: "4px 10px",
+                borderRadius: 20,
+                border: "1px solid #ff6b00",
+              }}
+            >
+              Coming Soon ✨
+            </span>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Virtual card launching soon"
+              className="absolute inset-0 z-20 cursor-default rounded-2xl border-0 bg-transparent p-0"
+              onClick={(e) => {
+                e.preventDefault();
+                setVirtualCardTapToast(true);
+                window.setTimeout(() => setVirtualCardTapToast(false), 3200);
+              }}
+            />
+            <div
+              className="pointer-events-none w-full perspective-[1000px] opacity-[0.72] grayscale"
+              style={{ perspective: "1000px" }}
+            >
             <div
               className="relative min-h-[200px] w-full transition-transform duration-500"
               style={{
                 transformStyle: "preserve-3d",
-                transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                transform: "rotateY(0deg)",
               }}
             >
               <div
@@ -140,40 +228,53 @@ export function GriddWalletBody({
                 <div className="mt-4 flex justify-end">
                   <div className="rounded bg-white/90 px-4 py-2 font-mono text-lg text-black">{cvv}</div>
                 </div>
-                <div className="mt-6 text-xs text-white/60">Tap to flip</div>
+                <div className="mt-6 text-xs text-white/40">Launching soon</div>
               </div>
             </div>
-          </button>
-        </section>
-
-        <section className="mt-10">
-          <div className="text-sm font-semibold text-[var(--text)]">Digital Wallets</div>
-          <div className="mt-3 space-y-3">
-            {(
-              [
-                { key: "applePayAdded" as const, label: "Apple Pay 🍎" },
-                { key: "googlePayAdded" as const, label: "Google Pay 🌐" },
-                { key: "samsungPayAdded" as const, label: "Samsung Pay 📱" },
-              ] as const
-            ).map((w) => (
-              <Card key={w.key} className="flex items-center justify-between p-4">
-                <span className="text-sm text-[var(--text)]">{w.label}</span>
-                {prefs?.[w.key] ? (
-                  <span className="text-sm text-[#00FF88]">Ready ✓</span>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    className="text-xs"
-                    disabled={!walletUnlocked}
-                    onClick={() => walletUnlocked && void toggleWalletFlag(w.key)}
-                  >
-                    Add
-                  </Button>
-                )}
-              </Card>
-            ))}
+            </div>
           </div>
         </section>
+
+        {driverWallet ? (
+          <section className="mt-10">
+            <div className="text-sm font-semibold text-[var(--text)]">Pay With</div>
+            <div className="mt-3 max-w-md space-y-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex w-full min-h-[48px] items-center justify-between gap-3 px-4"
+                disabled={!canUseStripeWallet}
+                onClick={() => canUseStripeWallet && setLoadOpen(true)}
+              >
+                <span className="text-sm font-medium text-[var(--text)]">🍎 Apple Pay</span>
+                <span className="text-xs font-semibold text-[#ff6b00]">Add</span>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex w-full min-h-[48px] items-center justify-between gap-3 px-4"
+                disabled={!canUseStripeWallet}
+                onClick={() => canUseStripeWallet && setLoadOpen(true)}
+              >
+                <span className="text-sm font-medium text-[var(--text)]">🤖 Google Pay</span>
+                <span className="text-xs font-semibold text-[#ff6b00]">Add</span>
+              </Button>
+            </div>
+            <p className="mt-2 max-w-md text-xs leading-relaxed text-[var(--sub)]">
+              Card, Apple Pay, Google Pay, and bank (Financial Connections) are added through Stripe when you complete
+              the payment sheet.
+            </p>
+          </section>
+        ) : (
+          <section className="mt-10">
+            <div className="text-sm font-semibold text-[var(--text)]">Wallets &amp; bank</div>
+            <p className="mt-2 text-xs leading-relaxed text-[var(--sub)]">
+              Debit/credit card, Apple Pay, Google Pay, and US bank debits (where your bank and Stripe support them)
+              are handled in one Stripe Payment sheet when you tap <span className="text-[var(--text)]">Load GRIDD</span>
+              — no separate crypto, wire, or third-party apps.
+            </p>
+          </section>
+        )}
 
         <section className="mt-10">
           <div className="text-sm font-semibold text-[var(--text)]">Transaction History</div>

@@ -240,6 +240,22 @@ export default function CustomerHomePage() {
           ))}
         </section>
 
+        {/* GRIDD Bites — social food (DoorDash Drive) */}
+        <button
+          type="button"
+          onClick={() => router.push("/bites")}
+          className="mt-6 w-full rounded-2xl border border-[#ff6b00]/40 bg-gradient-to-r from-[#1a0a00] to-[#0a0a0a] p-4 text-left transition hover:border-[#ff6b00]/70"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-[#ff6b00]">New</div>
+              <div className="mt-1 text-base font-bold text-white">GRIDD Bites 🍗</div>
+              <div className="mt-0.5 text-sm text-zinc-500">Social feed + order delivery in your area</div>
+            </div>
+            <span className="text-2xl">→</span>
+          </div>
+        </button>
+
         {/* GRIDD Rescue — Emergency Services */}
         <div
           style={{

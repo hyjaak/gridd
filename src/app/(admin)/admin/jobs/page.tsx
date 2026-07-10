@@ -51,7 +51,7 @@ export default function AdminJobsPage() {
       <div className="flex items-start gap-3">
         <SmartBack inline className="mt-1" />
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Admin · Jobs</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">CEO · Jobs</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Live job addresses (read-only search preview).
           </p>

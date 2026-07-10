@@ -3,5 +3,23 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/demand-decay",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/price-intelligence",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/ride-market",
+      "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/cron/insurance-expiry",
+      "schedule": "20 6 * * *"
+    }
+  ]
 }

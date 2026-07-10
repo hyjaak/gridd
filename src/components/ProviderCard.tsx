@@ -15,6 +15,9 @@ export function ProviderCard({ provider }: { provider: Provider }) {
           </div>
           <div className="truncate text-xs text-zinc-600 dark:text-zinc-300">
             {provider.city} · {provider.rating.toFixed(1)}★
+            {typeof provider.griddScore === "number" ? (
+              <span className="ml-1 text-amber-200/90">· GRIDD {provider.griddScore}</span>
+            ) : null}
           </div>
         </div>
       </div>

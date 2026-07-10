@@ -1,4 +1,13 @@
-/** Full legal copy for the agreements flow (see /agreements). */
+/** Full legal copy for the agreements flow (see /terms). */
+
+export const MESSAGING_CONSENT_BODY =
+  "By using GRIDD, you consent to receive transactional and service-related messages " +
+  "through the app and, where you have provided a phone number, SMS messages about your " +
+  "account, jobs, safety, and support. Message frequency varies. Standard message and data " +
+  "rates may apply. You can adjust notification preferences in Settings where available. " +
+  "Marketing messages are sent only if you opt in separately.\n\n" +
+  "Direct messaging between users must follow our community standards and Zero Tolerance Policy. " +
+  "Abuse, harassment, or unsolicited commercial contact may result in suspension or removal.";
 
 export const SCROLL_FOOTER =
   "\n\nScroll to the bottom to enable agreement.";
@@ -71,6 +80,26 @@ export const USER_AGREEMENT_BODY =
   "file false chargebacks, use bots or automated tools, " +
   "harass any user, solicit Providers outside GRIDD, " +
   "or attempt to compromise GRIDD systems.\n\n" +
+  "GRIDD MESSAGES (DIRECT MESSAGES)\n" +
+  "Direct messaging is for respectful coordination and neighborhood connection. " +
+  "You may not use Messages to harass, threaten, or spam other users; " +
+  "send illegal content; or evade blocks or bans. GRIDD may review reported " +
+  "conversations and may permanently ban accounts for serious or repeated " +
+  "violations.\n\n" +
+  "PLATFORM MONITORING & SAFETY\n" +
+  "By using GRIDD you agree that all activity on the platform may be monitored " +
+  "for safety, fraud prevention, and legal compliance. Content you remove from " +
+  "your own view (including messages) may be retained for up to ninety (90) days " +
+  "for safety review. GRIDD reserves the right to review any content reported " +
+  "for violations. Authorized GRIDD personnel may access messages, posts, jobs, " +
+  "and account data as needed to operate the service and respond to reports.\n\n" +
+  "DATA RETENTION (SUMMARY)\n" +
+  "Messages and community posts may be retained for up to ninety (90) days after " +
+  "you delete them from your view, unless a longer period is required by law or " +
+  "for an active investigation. Jobs and payment/transaction records may be kept " +
+  "longer for financial and legal requirements. Deleted user accounts may be " +
+  "retained in backup form for up to thirty (30) days before purge. Automated " +
+  "purge schedules may be applied via GRIDD infrastructure.\n\n" +
   "DISPUTE RESOLUTION\n" +
   "Disputes resolved through GRIDD mediation first. " +
   "Legal disputes resolved through binding arbitration " +

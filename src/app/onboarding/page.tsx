@@ -3,9 +3,11 @@
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { doc, getFirestore, updateDoc } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
+import { doc, getFirestore, setDoc } from "firebase/firestore";
 import { firebaseApp } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
+import { ensureGoogleUserProfileIfMissing } from "@/lib/auth";
 import { getUserRole } from "@/lib/userRole";
 
 const BG = "#060606";
@@ -22,7 +24,7 @@ function SlideWrap({
 }) {
   return (
     <div
-      className="flex min-h-[calc(100vh-120px)] flex-col items-center justify-center px-6 text-center"
+      className="relative z-10 flex min-h-[calc(100vh-120px)] flex-col items-center justify-center px-6 text-center"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0)" : "translateY(12px)",
@@ -37,23 +39,29 @@ function SlideWrap({
 export default function OnboardingPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading } = useAuth();
-  const [role, setRole] = useState<"customer" | "driver" | "admin" | null>(null);
+  const [role, setRole] = useState<"customer" | "driver" | "ceo" | null>(null);
   const [slide, setSlide] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const db = useMemo(() => (firebaseApp ? getFirestore(firebaseApp) : null), []);
 
   useEffect(() => {
     if (!user) {
-      router.replace("/login");
+      router.replace("/?modal=login");
       return;
     }
     let cancelled = false;
     void (async () => {
       const r = await getUserRole(user.uid);
       if (cancelled) return;
-      if (r === "admin") {
+      if (r === "ceo") {
         router.replace("/admin/dashboard");
+        return;
+      }
+      if (r == null) {
+        console.warn("[onboarding] no users/providers doc — send to Google role picker");
+        router.replace("/auth/google-role");
         return;
       }
       setRole(r === "driver" ? "driver" : "customer");
@@ -66,7 +74,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (authLoading || !profile || !role) return;
     if (profile.onboardingComplete === true) {
-      router.replace(role === "driver" ? "/jobs" : "/home");
+      router.replace(role === "driver" ? "/driver/jobs" : "/home");
     }
   }, [authLoading, profile, role, router]);
 
@@ -76,13 +84,26 @@ export default function OnboardingPage() {
   }, [profile?.name, user?.displayName]);
 
   const completeAndGo = useCallback(
-    async (dest: "/home" | "/jobs") => {
-      if (!user || !db || !role || role === "admin") return;
+    async (dest: "/home" | "/driver/jobs") => {
+      if (!user || !db || !role || role === "ceo") return;
+      setSaveError(null);
       setSaving(true);
       try {
+        const au = getAuth().currentUser;
+        if (!au) {
+          console.error("[onboarding] Enter GRIDD: no Firebase currentUser");
+          setSaveError("Please sign in again.");
+          return;
+        }
+        console.log("[onboarding] Enter GRIDD pressed, uid:", au.uid, "role:", role);
+        await ensureGoogleUserProfileIfMissing(au, role === "driver" ? "driver" : "customer");
         const col = role === "driver" ? "providers" : "users";
-        await updateDoc(doc(db, col, user.uid), { onboardingComplete: true });
+        await setDoc(doc(db, col, user.uid), { onboardingComplete: true }, { merge: true });
+        console.log("[onboarding] onboardingComplete saved →", dest);
         router.replace(dest);
+      } catch (e) {
+        console.error("[onboarding] Enter GRIDD error:", e);
+        setSaveError(e instanceof Error ? e.message : "Could not save. Check your connection and try again.");
       } finally {
         setSaving(false);
       }
@@ -91,13 +112,13 @@ export default function OnboardingPage() {
   );
 
   const skip = useCallback(() => {
-    void completeAndGo(role === "driver" ? "/jobs" : "/home");
+    void completeAndGo(role === "driver" ? "/driver/jobs" : "/home");
   }, [completeAndGo, role]);
 
   const total = 4;
   const dots = Array.from({ length: total }, (_, i) => i);
 
-  if (authLoading || !user || !role) {
+  if (authLoading || !user || !role || !profile) {
     return (
       <main className="flex min-h-screen items-center justify-center text-zinc-500" style={{ background: BG }}>
         Loading…
@@ -114,7 +135,7 @@ export default function OnboardingPage() {
       <button
         type="button"
         onClick={() => void skip()}
-        className="absolute right-4 top-4 z-20 text-sm font-semibold text-zinc-500 hover:text-zinc-300"
+        className="absolute right-4 top-4 z-30 text-sm font-semibold text-zinc-500 hover:text-zinc-300"
       >
         Skip
       </button>
@@ -224,6 +245,7 @@ export default function OnboardingPage() {
               <p className="mt-4 max-w-md text-sm leading-relaxed" style={{ color: SUB }}>
                 The Porch is where neighbors review providers, start debates, and shout out the best in the grid.
               </p>
+              {saveError ? <p className="mt-4 max-w-sm text-sm text-red-400">{saveError}</p> : null}
               <button
                 type="button"
                 disabled={saving}
@@ -328,10 +350,11 @@ export default function OnboardingPage() {
               <p className="mt-4 max-w-md text-sm leading-relaxed" style={{ color: SUB }}>
                 Jobs come to you. Accept what you want. Decline what you don&apos;t. You&apos;re the boss.
               </p>
+              {saveError ? <p className="mt-4 max-w-sm text-sm text-red-400">{saveError}</p> : null}
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => void completeAndGo("/jobs")}
+                onClick={() => void completeAndGo("/driver/jobs")}
                 className="mt-10 w-full max-w-sm rounded-2xl bg-[#00FF88] py-4 text-base font-black text-black disabled:opacity-50"
               >
                 {saving ? "…" : "Go Online Now →"}
@@ -341,7 +364,7 @@ export default function OnboardingPage() {
         </>
       )}
 
-      <div className="fixed bottom-8 left-0 right-0 flex justify-center gap-2">
+      <div className="pointer-events-none fixed bottom-8 left-0 right-0 z-0 flex justify-center gap-2">
         {dots.map((i) => (
           <span
             key={i}

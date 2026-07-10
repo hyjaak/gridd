@@ -18,8 +18,8 @@ export default function CustomerTrackPage() {
       if (!u) return;
       const r = await getUserRole(u.uid);
       if (cancelled) return;
-      if (r === "driver") router.replace("/jobs");
-      else if (r === "admin") router.replace("/admin/dashboard");
+      if (r === "driver") router.replace("/driver/jobs");
+      else if (r === "ceo") router.replace("/admin/dashboard");
     })();
     return () => {
       cancelled = true;

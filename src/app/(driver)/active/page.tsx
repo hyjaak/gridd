@@ -30,7 +30,8 @@ import {
 } from "@/lib/job-tracking";
 import { serviceMeta } from "@/lib/driver-service-meta";
 import { uploadJobStepPhoto } from "@/lib/upload-job-photo";
-import type { Job, JobStatus } from "@/types";
+import type { Job, JobStatus, Provider } from "@/types";
+import { useDriverApprovalRedirect } from "@/hooks/useDriverApprovalRedirect";
 
 const ACTIVE: JobStatus[] = ["active", "assigned", "en_route", "arrived", "in_progress"];
 
@@ -72,6 +73,7 @@ async function notifyCustomer(jobId: string, kind: string) {
 export default function DriverActiveJobPage() {
   const { loading: gateLoading, ok } = useRequireAuth(["driver"]);
   const { user } = useAuth();
+  const [provider, setProvider] = useState<Provider | null>(null);
   const [job, setJob] = useState<Job | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -81,6 +83,21 @@ export default function DriverActiveJobPage() {
     tierBonus: number;
     total: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!firebaseApp || !user?.uid) return;
+    const db = getFirestore(firebaseApp);
+    const unsubProv = onSnapshot(doc(db, "providers", user.uid), (snap) => {
+      if (!snap.exists()) {
+        setProvider(null);
+        return;
+      }
+      setProvider({ uid: snap.id, ...(snap.data() as Omit<Provider, "uid">) });
+    });
+    return () => unsubProv();
+  }, [user?.uid]);
+
+  useDriverApprovalRedirect(provider, !gateLoading && ok);
 
   useEffect(() => {
     if (!firebaseApp || !user?.uid) return;
@@ -203,7 +220,7 @@ export default function DriverActiveJobPage() {
   if (job === undefined) {
     return (
       <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
-        <BackButton href="/jobs" />
+        <BackButton href="/driver/jobs" />
         <div className="mx-auto max-w-xl animate-pulse rounded-2xl bg-white/5 p-24" />
         <DriverNav />
       </main>
@@ -213,11 +230,11 @@ export default function DriverActiveJobPage() {
   if (!job) {
     return (
       <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-36 pt-16 sm:pt-10">
-        <BackButton href="/jobs" />
+        <BackButton href="/driver/jobs" />
         <div className="mx-auto max-w-xl space-y-4 text-center">
           <h1 className="text-xl font-semibold text-[var(--text)]">No active job</h1>
           <p className="text-sm text-[var(--sub)]">Pick one from the job board when you&apos;re ready.</p>
-          <Link href="/jobs" className="inline-block text-[#00FF88] underline">
+          <Link href="/driver/jobs" className="inline-block text-[#00FF88] underline">
             Go to jobs
           </Link>
         </div>
@@ -228,7 +245,7 @@ export default function DriverActiveJobPage() {
 
   return (
     <main className="page-wrapper min-h-full bg-[#060606] px-4 pb-40 pt-16 sm:pt-10">
-      <BackButton href="/jobs" />
+      <BackButton href="/driver/jobs" />
 
       <div className="mx-auto max-w-xl space-y-5">
         <div
@@ -341,7 +358,7 @@ export default function DriverActiveJobPage() {
                 <span>{money(completeSummary.total)}</span>
               </div>
             </div>
-            <Link href="/jobs" className="block">
+            <Link href="/driver/jobs?gigComplete=1" className="block">
               <Button className="min-h-[48px] w-full" type="button">
                 Back to Jobs
               </Button>

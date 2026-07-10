@@ -11,7 +11,7 @@ export function useRequireSignedIn() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user) router.replace("/login");
+    if (!user) router.replace("/");
   }, [loading, user, router]);
 
   const ok = !loading && !!user;

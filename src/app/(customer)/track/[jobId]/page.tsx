@@ -11,6 +11,7 @@ import {
   increment,
   onSnapshot,
   runTransaction,
+  serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
 import { MapPin, Phone, Star } from "lucide-react";
@@ -28,6 +29,8 @@ import {
   TRACKING_STEP_DEFS,
   trackingStepIndex,
 } from "@/lib/job-tracking";
+import { makeConversationId } from "@/lib/dm-utils";
+import { sanitizeForFirestore } from "@/lib/sanitizeFirestore";
 import type { Job } from "@/types";
 
 function etaCountdown(etaIso: string | undefined): string | null {
@@ -55,8 +58,8 @@ export default function TrackJobPage() {
       if (!u) return;
       const r = await getUserRole(u.uid);
       if (cancelled) return;
-      if (r === "driver") router.replace("/jobs");
-      else if (r === "admin") router.replace("/admin/dashboard");
+      if (r === "driver") router.replace("/driver/jobs");
+      else if (r === "ceo") router.replace("/admin/dashboard");
     })();
     return () => {
       cancelled = true;
@@ -179,18 +182,46 @@ export default function TrackJobPage() {
     const db = getFirestore(firebaseApp);
     const authorName = profile?.name ?? user.email ?? "Customer";
     try {
-      await addDoc(collection(db, "porch"), {
-        type: "review",
-        title: `${job.serviceName} — ${job.providerName ?? "Provider"}`,
+      const reviewPayload = {
+        type: "review" as const,
+        category: "review",
+        title: `${job.serviceName ?? "Service"} — ${job.providerName ?? "Provider"}`,
         body: reviewText.trim() || "Great service.",
-        rating: reviewStars,
+        rating: Number(reviewStars) || 5,
         authorUid: user.uid,
-        authorName,
-        authorRole: "customer",
-        createdAt: new Date().toISOString(),
-        jobId: job.id,
-        providerUid: job.providerUid,
-      });
+        authorId: user.uid,
+        userId: user.uid,
+        authorName: String((authorName ?? user.displayName ?? "Customer") || "Customer"),
+        authorPhoto: user.photoURL ?? null,
+        authorRole: "customer" as const,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        votes: { yes: 0, no: 0 },
+        voteCount: 0,
+        upvotes: [] as string[],
+        downvotes: [] as string[],
+        likeUids: [] as string[],
+        likes: [] as string[],
+        griddit: [] as string[],
+        likeCount: 0,
+        gridditCount: 0,
+        comments: [] as unknown[],
+        commentCount: 0,
+        tags: [] as string[],
+        imageUrl: null as null,
+        location: null as null,
+        jobLocation: null as null,
+        pinned: false,
+        status: "active" as const,
+        reported: false,
+        jobId: job.id ?? "",
+        providerUid: job.providerUid ?? "",
+      };
+      console.log(
+        "POST DATA:",
+        JSON.stringify({ ...reviewPayload, createdAt: "[serverTimestamp]" }),
+      );
+      await addDoc(collection(db, "porch"), sanitizeForFirestore(reviewPayload as Record<string, unknown>));
 
       const pref = doc(db, "providers", job.providerUid);
       await runTransaction(db, async (tx) => {
@@ -249,6 +280,19 @@ export default function TrackJobPage() {
 
   const totalCents = job.chargedTotalCents ?? job.amountCents ?? 0;
   const displayAddress = job.addressLine ?? [job.city, job.zip].filter(Boolean).join(", ");
+  const baseCents = typeof job.amountCents === "number" ? job.amountCents : 0;
+  const paymentLabel = job.paymentStatus as string | undefined;
+  const awaitingQuote =
+    job.status === "pending" &&
+    job.paymentStatus !== "confirmed" &&
+    (paymentLabel === "quote_pending" ||
+      Boolean((job.bookingDetails as { needsQuote?: boolean } | undefined)?.needsQuote) ||
+      baseCents < 50);
+
+  const showPendingCustomerCard =
+    isCustomer &&
+    job.status === "pending" &&
+    !(job.paymentStatus === "confirmed" && job.providerUid);
 
   return (
     <main className="min-h-full bg-[#060606] px-6 pb-36 pt-16 sm:pt-10">
@@ -260,6 +304,64 @@ export default function TrackJobPage() {
           <h1 className="mt-1 text-2xl font-semibold text-[var(--text)]">{job.serviceName}</h1>
           <p className="mt-1 text-sm text-[var(--sub)]">{displayAddress}</p>
         </div>
+
+        {showPendingCustomerCard ? (
+          <Card className="p-4">
+            {job.paymentStatus === "confirmed" && !job.providerUid ? (
+              <div>
+                <div className="flex items-center gap-2 font-semibold text-[#3dff7a]">
+                  <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-[#3dff7a]" />
+                  Looking for a driver…
+                </div>
+                <p className="mt-2 text-sm text-[var(--sub)]">
+                  Drivers nearby have been notified. Estimated wait: a few minutes in busy areas.
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  You can cancel free within 2 minutes of booking when no driver is assigned.
+                </p>
+                {customerCanCancel(job.status) ? (
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={cancelBusy}
+                      onClick={() => void cancelJob()}
+                    >
+                      {cancelBusy ? "Cancelling…" : "Cancel request"}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : awaitingQuote ? (
+              <div>
+                <p className="text-sm text-[var(--text)]">
+                  This job needs a written quote in chat before you can pay.
+                </p>
+                <Link
+                  href={`/chat/${jobId}`}
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-xl border border-[var(--border)] bg-white/5 text-center text-sm font-semibold text-[var(--text)] hover:bg-white/10"
+                >
+                  Open chat
+                </Link>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-[var(--text)]">
+                  {job.providerUid
+                    ? "Pay now to confirm your booking — your provider is selected."
+                    : "Complete payment to alert drivers in your area."}
+                </p>
+                <Link
+                  href={`/checkout/${jobId}`}
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-orange-500 to-amber-600 text-center text-sm font-bold text-white"
+                >
+                  Pay {money(totalCents)}
+                </Link>
+              </div>
+            )}
+          </Card>
+        ) : null}
 
         {/* Google Maps hook: replace inner div with <GoogleMap> when API key is set */}
         <div
@@ -394,6 +496,23 @@ export default function TrackJobPage() {
           >
             {cancelBusy ? "Cancelling…" : "Cancel job"}
           </Button>
+        ) : null}
+
+        {job.status === "completed" && isCustomer && job.providerUid && user ? (
+          <Card className="p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--sub)]">What&apos;s next?</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" className="flex-1 min-w-[120px]" onClick={() => setReviewOpen(true)}>
+                ⭐ Rate
+              </Button>
+              <Link
+                href={`/dm/${makeConversationId(user.uid, job.providerUid)}`}
+                className="inline-flex flex-1 min-w-[120px] items-center justify-center rounded-xl border border-[var(--border)] bg-[#111] px-4 py-2.5 text-sm font-semibold text-[var(--text)] hover:bg-white/5"
+              >
+                💬 Message again
+              </Link>
+            </div>
+          </Card>
         ) : null}
 
         {job.status === "cancelled" ? (

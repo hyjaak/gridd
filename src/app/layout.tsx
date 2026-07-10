@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
-import { DM_Sans, Geist, Geist_Mono, Syne } from "next/font/google";
+import { Bebas_Neue, DM_Sans, Geist, Geist_Mono, Syne } from "next/font/google";
 import { AuthProvider } from "@/providers/AuthProvider";
 import "./globals.css";
 
@@ -24,9 +24,16 @@ const dmSans = DM_Sans({
   subsets: ["latin"],
 });
 
+const bebasNeue = Bebas_Neue({
+  variable: "--font-bebas-neue",
+  subsets: ["latin"],
+  weight: "400",
+});
+
 export const metadata: Metadata = {
-  title: "Gridd",
-  description: "On-demand services platform",
+  title: "GRIDD — The Neighborhood Economy",
+  description:
+    "Book rides, home services, haul, roadside & more. PriceIQ™ pricing, The Porch for your block, and drivers who keep 85%.",
 };
 
 export default function RootLayout({
@@ -37,11 +44,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${dmSans.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${dmSans.variable} ${bebasNeue.variable} min-h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#060606] text-[#eeeeee]">
+      <body className="min-h-dvh w-full max-w-full overflow-x-hidden bg-[#060606] text-[#eeeeee]">
         <AuthProvider>
-          <div className="page-wrapper flex min-h-full flex-1 flex-col">{children}</div>
+          <div className="page-wrapper w-full min-h-min">{children}</div>
         </AuthProvider>
       </body>
     </html>

@@ -52,11 +52,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 });
   }
 
+  if (job.paymentStatus === "confirmed") {
+    return NextResponse.json({ ok: false, error: "Already paid" }, { status: 400 });
+  }
+
   const base = typeof job.amountCents === "number" ? job.amountCents : 0;
+  if (base < 50) {
+    return NextResponse.json({ ok: false, error: "Job amount not set or too low to charge" }, { status: 400 });
+  }
   if (amount < base) {
     return NextResponse.json({ ok: false, error: "Amount mismatch" }, { status: 400 });
   }
 
+  // Payment Element: cards, Apple Pay, Google Pay, Samsung Pay (where enabled), Link, etc.
   const pi = await stripe.paymentIntents.create({
     amount,
     currency: "usd",

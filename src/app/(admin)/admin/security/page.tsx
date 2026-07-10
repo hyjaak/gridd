@@ -1,54 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { firebaseAuth } from "@/lib/firebase";
+import { useEffect, useState } from "react";
+import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { blockUser } from "@/lib/admin-firestore";
+
 type AlertDoc = {
   id: string;
   severity?: "critical" | "warning" | "info";
   title?: string;
   body?: string;
   uid?: string;
-  createdAt?: string;
+  createdAt?: unknown;
 };
 
 export default function AdminSecurityPage() {
   const [items, setItems] = useState<AlertDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [blocking, setBlocking] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const token = await firebaseAuth?.currentUser?.getIdToken();
-      if (!token) return;
-      const res = await fetch("/api/admin/alerts", {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json().catch(() => null)) as { ok?: boolean; items?: AlertDoc[] };
-      if (res.ok && data?.items) setItems(data.items);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const q = query(collection(db, "alerts"), orderBy("createdAt", "desc"), limit(50));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setErr(null);
+        setLoading(false);
+        setItems(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<AlertDoc, "id">),
+          })),
+        );
+      },
+      (e) => {
+        setErr(e.message);
+        setLoading(false);
+      },
+    );
+    return () => unsub();
+  }, []);
 
-  async function block(uid: string) {
-    const token = await firebaseAuth?.currentUser?.getIdToken();
-    if (!token || !uid) return;
+  async function block(uid: string | undefined) {
+    if (!uid) return;
     setBlocking(uid);
     try {
-      await fetch("/api/admin/block", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ uid }),
-      });
-      await load();
+      await blockUser(uid);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to block");
     } finally {
       setBlocking(null);
     }
@@ -57,9 +57,11 @@ export default function AdminSecurityPage() {
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Admin · Security</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">CEO · Security</h1>
         <p className="mt-1 text-sm text-zinc-400">Alerts from Firestore /alerts</p>
       </div>
+
+      {err ? <p className="text-sm text-red-400">{err}</p> : null}
 
       {loading ? (
         <div className="h-32 animate-pulse rounded-2xl bg-zinc-800/80" />
@@ -91,7 +93,7 @@ export default function AdminSecurityPage() {
                   <button
                     type="button"
                     disabled={blocking === a.uid}
-                    onClick={() => void block(a.uid!)}
+                    onClick={() => void block(a.uid)}
                     className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-sm text-red-300 hover:bg-red-500/20"
                   >
                     {blocking === a.uid ? "…" : "Block"}

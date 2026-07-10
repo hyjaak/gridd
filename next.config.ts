@@ -6,6 +6,15 @@ loadEnvConfig(process.cwd());
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["stripe", "twilio"],
+  async redirects() {
+    return [
+      { source: "/driver/wallet", destination: "/driver/profile", permanent: true },
+      { source: "/agreements", destination: "/terms", permanent: false },
+    ];
+  },
+  async rewrites() {
+    return [{ source: "/jobs", destination: "/driver/jobs" }];
+  },
 };
 
 export default nextConfig;

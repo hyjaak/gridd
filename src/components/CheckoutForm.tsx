@@ -2,17 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  CardCvcElement,
-  CardExpiryElement,
-  CardNumberElement,
-  Elements,
-  PaymentRequestButtonElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import type { PaymentRequest, PaymentRequestPaymentMethodEvent } from "@stripe/stripe-js";
 import { doc, getDoc, getFirestore } from "firebase/firestore";
 import { firebaseApp } from "@/lib/firebase";
 import { firebaseAuth } from "@/lib/firebase";
@@ -30,82 +21,31 @@ const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
   : null;
 
-const cardStyle = {
-  style: {
-    base: {
-      color: "#eeeeee",
-      fontFamily: "system-ui, sans-serif",
-      fontSize: "16px",
-      "::placeholder": { color: "#555555" },
-    },
-    invalid: { color: "#f87171" },
-  },
-};
-
-type PayMode = "card" | "wallet";
-
 function InnerPay({
+  jobId,
   totalCents,
-  clientSecret,
   onSuccess,
 }: {
+  jobId: string;
   totalCents: number;
-  clientSecret: string;
   onSuccess: () => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paymentRequest, setPaymentRequest] = useState<PaymentRequest | null>(null);
-  const [payMode, setPayMode] = useState<PayMode>("card");
 
-  useEffect(() => {
-    if (!stripe || !clientSecret) return;
-    let cancelled = false;
-    const pr = stripe.paymentRequest({
-      country: "US",
-      currency: "usd",
-      total: { label: "GRIDD job", amount: totalCents },
-      requestPayerName: true,
-      requestPayerEmail: true,
-    });
-    void pr.canMakePayment().then((result) => {
-      if (!cancelled && result) setPaymentRequest(pr);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [stripe, clientSecret, totalCents]);
-
-  useEffect(() => {
-    if (!stripe || !paymentRequest || !clientSecret) return;
-    const handler = async (ev: PaymentRequestPaymentMethodEvent) => {
-      const { error: err } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: ev.paymentMethod.id,
-      });
-      if (err) {
-        ev.complete("fail");
-        setError(err.message ?? "Payment failed");
-        return;
-      }
-      ev.complete("success");
-      onSuccess();
-    };
-    paymentRequest.on("paymentmethod", handler);
-    return () => {
-      paymentRequest.off("paymentmethod", handler);
-    };
-  }, [stripe, paymentRequest, clientSecret, onSuccess]);
-
-  async function payCard() {
+  const handlePay = useCallback(async () => {
     if (!stripe || !elements) return;
-    const num = elements.getElement(CardNumberElement);
-    if (!num) return;
     setBusy(true);
     setError(null);
-    const { error: err } = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card: num },
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const { error: err } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${origin}/track/${jobId}`,
+      },
+      redirect: "if_required",
     });
     setBusy(false);
     if (err) {
@@ -113,77 +53,28 @@ function InnerPay({
       return;
     }
     onSuccess();
-  }
+  }, [stripe, elements, jobId, onSuccess]);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setPayMode("card")}
-          className={[
-            "rounded-full border px-4 py-2 text-sm",
-            payMode === "card" ? "border-[#00FF88] text-[#00FF88]" : "border-[var(--border)] text-[var(--sub)]",
-          ].join(" ")}
-        >
-          Card
-        </button>
-        <button
-          type="button"
-          onClick={() => setPayMode("wallet")}
-          className={[
-            "rounded-full border px-4 py-2 text-sm",
-            payMode === "wallet" ? "border-[#00FF88] text-[#00FF88]" : "border-[var(--border)] text-[var(--sub)]",
-          ].join(" ")}
-        >
-          Apple Pay / Google Pay
-        </button>
-        <span className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[var(--sub)]">
-          Samsung Pay (where supported)
-        </span>
-      </div>
-
-      {payMode === "wallet" && paymentRequest ? (
-        <div className="rounded-xl border border-[var(--border)] bg-[#0a0a0a] p-3">
-          <PaymentRequestButtonElement options={{ paymentRequest }} className="h-12 w-full" />
-        </div>
-      ) : payMode === "wallet" ? (
-        <p className="text-sm text-[var(--sub)]">Wallet pay isn’t available on this device or browser.</p>
-      ) : null}
-
-      {payMode === "card" ? (
-        <div className="space-y-3">
-          <div>
-            <div className="text-xs text-[var(--sub)]">Card number</div>
-            <div className="mt-1 rounded-xl border border-[var(--border)] bg-[#0a0a0a] px-3 py-3">
-              <CardNumberElement options={cardStyle} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs text-[var(--sub)]">Expiry</div>
-              <div className="mt-1 rounded-xl border border-[var(--border)] bg-[#0a0a0a] px-3 py-3">
-                <CardExpiryElement options={cardStyle} />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-[var(--sub)]">CVC</div>
-              <div className="mt-1 rounded-xl border border-[var(--border)] bg-[#0a0a0a] px-3 py-3">
-                <CardCvcElement options={cardStyle} />
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
+      <p className="text-center text-xs leading-relaxed text-[var(--sub)]">
+        <span className="font-medium text-[var(--text)]">Pay your way:</span> card,{" "}
+        <span className="text-[var(--text)]">Apple Pay</span>, <span className="text-[var(--text)]">Google Pay</span>
+        , and <span className="text-[var(--text)]">Samsung Pay</span> (Samsung Internet / compatible devices) appear
+        below when Stripe and your browser support them.
+      </p>
+      <PaymentElement
+        options={{
+          layout: { type: "accordion", defaultCollapsed: false },
+          defaultValues: {
+            billingDetails: { email: firebaseAuth?.currentUser?.email ?? undefined },
+          },
+        }}
+      />
       {error ? <div className="text-sm text-red-400">{error}</div> : null}
-
-      {payMode === "card" ? (
-        <Button className="w-full" disabled={busy || !stripe} onClick={() => void payCard()}>
-          Pay {money(totalCents)} securely
-        </Button>
-      ) : null}
-
+      <Button className="w-full min-h-[52px] text-base font-bold" disabled={busy || !stripe} onClick={() => void handlePay()}>
+        {busy ? "Processing…" : `Pay ${money(totalCents)} securely`}
+      </Button>
       <div className="flex items-center justify-center gap-2 border-t border-[var(--border)] pt-4 text-xs text-[var(--sub)]">
         <span aria-hidden>🔒</span>
         <span>Secured by Stripe</span>
@@ -283,6 +174,17 @@ export function CheckoutForm({ jobId }: { jobId: string }) {
     );
   }
 
+  if (job.paymentStatus === "confirmed") {
+    return (
+      <Card className="p-6">
+        <p className="text-sm text-[var(--text)]">This job is already paid.</p>
+        <Button className="mt-4 w-full" onClick={() => router.push(`/track/${jobId}`)}>
+          View job
+        </Button>
+      </Card>
+    );
+  }
+
   if (!stripePromise) {
     return (
       <Card className="p-6">
@@ -336,8 +238,20 @@ export function CheckoutForm({ jobId }: { jobId: string }) {
         </div>
       ) : (
         <div className="mt-8">
-          <Elements stripe={stripePromise} options={{ clientSecret }}>
-            <InnerPay totalCents={totalCents} clientSecret={clientSecret} onSuccess={onPaid} />
+          <Elements
+            stripe={stripePromise}
+            options={{
+              clientSecret,
+              appearance: {
+                theme: "night",
+                variables: {
+                  colorPrimary: "#00ff88",
+                  borderRadius: "12px",
+                },
+              },
+            }}
+          >
+            <InnerPay jobId={jobId} totalCents={totalCents} onSuccess={onPaid} />
           </Elements>
         </div>
       )}

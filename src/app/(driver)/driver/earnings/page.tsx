@@ -14,6 +14,7 @@ import {
 import { firebaseApp } from "@/lib/firebase";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useDriverApprovalRedirect } from "@/hooks/useDriverApprovalRedirect";
 import { useAuth } from "@/hooks/useAuth";
 import { DriverNav } from "@/components/DriverNav";
 import { money, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
@@ -86,6 +87,8 @@ export default function DriverEarningsPage() {
     });
     return () => unsub();
   }, [user?.uid]);
+
+  useDriverApprovalRedirect(provider, !gateLoading && ok);
 
   const week = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -211,7 +214,7 @@ export default function DriverEarningsPage() {
           </div>
         </Card>
 
-        <Link href="/jobs" className="inline-block text-sm text-[#00FF88] underline">
+        <Link href="/driver/jobs" className="inline-block text-sm text-[#00FF88] underline">
           ← Back to jobs
         </Link>
       </div>

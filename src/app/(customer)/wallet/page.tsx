@@ -22,8 +22,8 @@ export default function CustomerWalletPage() {
       <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[#060606]/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-6 py-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <BackButton href="/home" inline />
-            <Link href="/home" className="truncate text-lg font-semibold tracking-tight text-[#00FF88]">
+            <BackButton href="/profile" inline />
+            <Link href="/profile" className="truncate text-lg font-semibold tracking-tight text-[#00FF88]">
               GRIDD
             </Link>
           </div>
@@ -31,7 +31,7 @@ export default function CustomerWalletPage() {
         </div>
       </header>
 
-      <GriddWalletBody {...data} walletUnlocked={true} cashOutHref="/profile" />
+      <GriddWalletBody {...data} walletUnlocked={true} loadReturnPath="/wallet" />
 
       <CustomerNav />
     </main>

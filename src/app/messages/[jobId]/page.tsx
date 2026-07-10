@@ -2,33 +2,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   addDoc,
   collection,
   doc,
+  getDocs,
   getFirestore,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
-  Timestamp,
+  setDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { Check, CheckCheck, MessageCircle, Phone } from "lucide-react";
 import { firebaseApp, firebaseAuth, storage } from "@/lib/firebase";
 import { BackButton } from "@/components/BackButton";
+import { DriverDemoChrome } from "@/components/driver/DriverDemoChrome";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/hooks/useAuth";
+import { normalizeChatDocToJobMessage as normalizeChatDoc, chatMsgTime as msgTime } from "@/lib/chat-message-normalize";
+import { stripUndefinedDeep } from "@/lib/sanitizeFirestore";
 import type { Job, JobChatMessage } from "@/types";
-
-function msgTime(raw: unknown): string {
-  if (raw instanceof Timestamp) return raw.toDate().toISOString();
-  if (typeof raw === "string") return raw;
-  return new Date().toISOString();
-}
 
 function parseDollarCents(text: string): number | null {
   const m = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
@@ -39,9 +37,10 @@ function parseDollarCents(text: string): number | null {
 }
 
 export default function JobMessagesPage() {
+  const router = useRouter();
   const params = useParams();
   const jobId = String(params.jobId ?? "");
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const [job, setJob] = useState<Job | null | undefined>(undefined);
   const [messages, setMessages] = useState<JobChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -51,6 +50,7 @@ export default function JobMessagesPage() {
   const [quoteBusy, setQuoteBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!firebaseApp || !jobId) return;
@@ -69,26 +69,64 @@ export default function JobMessagesPage() {
   useEffect(() => {
     if (!firebaseApp || !jobId) return;
     const db = getFirestore(firebaseApp);
-    const q = query(
-      collection(db, "jobs", jobId, "messages"),
-      orderBy("createdAt", "asc"),
-    );
+    const q = query(collection(db, "chats", jobId, "messages"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows: JobChatMessage[] = snap.docs.map((d) => {
-          const data = d.data() as Omit<JobChatMessage, "id" | "jobId">;
-          const createdAt = msgTime(
-            (data as { createdAt?: unknown }).createdAt,
-          );
-          return { id: d.id, jobId, ...data, createdAt };
+        const sorted = snap.docs.slice().sort((a, b) => {
+          const ca = a.data().createdAt;
+          const cb = b.data().createdAt;
+          const ta =
+            ca && typeof (ca as { toMillis?: () => number }).toMillis === "function"
+              ? (ca as { toMillis: () => number }).toMillis()
+              : 0;
+          const tb =
+            cb && typeof (cb as { toMillis?: () => number }).toMillis === "function"
+              ? (cb as { toMillis: () => number }).toMillis()
+              : 0;
+          return ta - tb;
         });
-        setMessages(rows);
+        setMessages(sorted.map((d) => normalizeChatDoc(d, jobId)));
       },
       () => setMessages([]),
     );
     return () => unsub();
   }, [jobId]);
+
+  const markedChatReadRef = useRef(false);
+  useEffect(() => {
+    markedChatReadRef.current = false;
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!firebaseApp || !jobId || !user || !job || markedChatReadRef.current) return;
+    const db = getFirestore(firebaseApp);
+    const isCustomer = job.customerUid === user.uid;
+    void (async () => {
+      try {
+        const snap = await getDocs(collection(db, "chats", jobId, "messages"));
+        const batch = writeBatch(db);
+        let updates = 0;
+        for (const d of snap.docs) {
+          const data = d.data();
+          const isProv = data.role === "provider" || data.senderRole === "driver";
+          const isUserSide = data.role === "user" || data.senderRole === "customer";
+          const shouldMark =
+            (isCustomer && isProv && data.read !== true) ||
+            (!isCustomer && isUserSide && data.read !== true);
+          if (shouldMark) {
+            batch.update(d.ref, { read: true });
+            updates += 1;
+          }
+        }
+        if (updates > 0) await batch.commit();
+        await updateDoc(doc(db, "jobs", jobId), { unreadCount: 0 }).catch(() => null);
+        markedChatReadRef.current = true;
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [firebaseApp, jobId, user, job]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -162,10 +200,24 @@ export default function JobMessagesPage() {
           quotedAmountCents: suggestedQuoteCents,
         },
       });
+      router.push(`/checkout/${jobId}`);
     } finally {
       setQuoteBusy(false);
     }
-  }, [firebaseApp, job, jobId, role, suggestedQuoteCents]);
+  }, [firebaseApp, job, jobId, role, router, suggestedQuoteCents]);
+
+  const signalProviderTyping = useCallback(() => {
+    if (!firebaseApp || !jobId || role !== "driver" || !user) return;
+    const db = getFirestore(firebaseApp);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => {
+      void setDoc(
+        doc(db, "chats", jobId),
+        { typingProviderUid: user.uid, typingAt: serverTimestamp() },
+        { merge: true },
+      );
+    }, 200);
+  }, [firebaseApp, jobId, role, user]);
 
   async function send() {
     const t = text.trim();
@@ -173,17 +225,45 @@ export default function JobMessagesPage() {
     setSending(true);
     const db = getFirestore(firebaseApp);
     const senderRole: JobChatMessage["senderRole"] =
-      role === "admin" ? "admin" : role === "driver" ? "driver" : "customer";
+      role === "ceo" ? "ceo" : role === "driver" ? "driver" : "customer";
     try {
-      await addDoc(collection(db, "jobs", jobId, "messages"), {
+      const firebaseRole =
+        role === "ceo" ? "user" : role === "driver" ? "provider" : "user";
+      const senderName =
+        profile?.name ?? user.email?.split("@")[0] ?? (role === "driver" ? "Provider" : "You");
+      const msgData = stripUndefinedDeep({
+        text: t,
+        senderId: user.uid,
+        senderName: senderName || "",
+        role: firebaseRole,
+        createdAt: serverTimestamp(),
+        read: false,
         jobId,
         senderUid: user.uid,
         senderRole,
-        text: t,
-        createdAt: serverTimestamp(),
         smsSent: false,
         readByUids: [user.uid],
-      });
+      }) as Record<string, unknown>;
+      console.log("POST DATA:", JSON.stringify({ ...msgData, createdAt: "[serverTimestamp]" }));
+      await addDoc(collection(db, "chats", jobId, "messages"), msgData);
+      await updateDoc(doc(db, "jobs", jobId), {
+        lastMessage: t,
+        lastMessageAt: serverTimestamp(),
+      }).catch(() => null);
+      await setDoc(doc(db, "chats", jobId), { typingProviderUid: null, typingAt: null }, { merge: true }).catch(
+        () => null,
+      );
+      const token = await firebaseAuth?.currentUser?.getIdToken();
+      if (token) {
+        void fetch(`/api/jobs/${jobId}/message-notify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ text: t.slice(0, 140) }),
+        }).catch(() => null);
+      }
       setText("");
     } finally {
       setSending(false);
@@ -201,17 +281,27 @@ export default function JobMessagesPage() {
       const attachmentUrl = await getDownloadURL(r);
       const db = getFirestore(firebaseApp);
       const senderRole: JobChatMessage["senderRole"] =
-        role === "admin" ? "admin" : role === "driver" ? "driver" : "customer";
-      await addDoc(collection(db, "jobs", jobId, "messages"), {
+        role === "ceo" ? "ceo" : role === "driver" ? "driver" : "customer";
+      const firebaseRole =
+        role === "ceo" ? "user" : role === "driver" ? "provider" : "user";
+      const senderName =
+        profile?.name ?? user.email?.split("@")[0] ?? (role === "driver" ? "Provider" : "You");
+      const photoMsg = stripUndefinedDeep({
+        text: "📷 Photo",
+        senderId: user.uid,
+        senderName: senderName || "",
+        role: firebaseRole,
+        createdAt: serverTimestamp(),
+        read: false,
+        attachmentUrl: attachmentUrl || "",
         jobId,
         senderUid: user.uid,
         senderRole,
-        text: "📷 Photo",
-        attachmentUrl,
-        createdAt: serverTimestamp(),
         smsSent: false,
         readByUids: [user.uid],
-      });
+      }) as Record<string, unknown>;
+      console.log("POST DATA:", JSON.stringify({ ...photoMsg, createdAt: "[serverTimestamp]" }));
+      await addDoc(collection(db, "chats", jobId, "messages"), photoMsg);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -239,7 +329,9 @@ export default function JobMessagesPage() {
   const backHref = role === "driver" ? `/active` : `/track/${jobId}`;
 
   return (
-    <main className="flex min-h-[100dvh] flex-col bg-[#060606]">
+    <>
+      {role === "driver" ? <DriverDemoChrome /> : null}
+      <main className="flex min-h-[100dvh] flex-col bg-[#060606]">
       <div className="sticky top-0 z-20 border-b border-white/10 bg-[#060606]/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           <BackButton href={backHref} inline />
@@ -299,14 +391,14 @@ export default function JobMessagesPage() {
       <div className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-3 overflow-y-auto px-3 py-4">
         {messages.map((m) => {
           const mine = m.senderUid === user?.uid;
-          const isAdmin = m.senderRole === "admin";
+          const isCeoMsg = m.senderRole === "ceo" || m.senderRole === "admin";
           const isCustomerMsg = m.senderRole === "customer";
-          const align = isAdmin
+          const align = isCeoMsg
             ? "mx-auto max-w-[90%]"
             : isCustomerMsg
               ? "mr-auto max-w-[85%]"
               : "ml-auto max-w-[85%]";
-          const bubble = isAdmin
+          const bubble = isCeoMsg
             ? "rounded-2xl bg-zinc-600/40 px-4 py-2 text-center text-sm text-zinc-100"
             : isCustomerMsg
               ? "rounded-2xl rounded-bl-md bg-blue-600/35 px-4 py-2 text-sm text-[var(--text)]"
@@ -317,7 +409,7 @@ export default function JobMessagesPage() {
           return (
             <div key={m.id} className={align}>
               <div className={bubble}>
-                {isAdmin ? (
+                {isCeoMsg ? (
                   <span className="text-[10px] uppercase tracking-wider text-zinc-300">GRIDD</span>
                 ) : null}
                 {m.attachmentUrl ? (
@@ -378,7 +470,10 @@ export default function JobMessagesPage() {
           <Input
             className="flex-1"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              signalProviderTyping();
+            }}
             placeholder="Message…"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -401,5 +496,6 @@ export default function JobMessagesPage() {
         ) : null}
       </div>
     </main>
+    </>
   );
 }

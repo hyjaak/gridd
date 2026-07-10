@@ -27,11 +27,11 @@ export function LandingAuthRedirect() {
       ran.current = true;
 
       if (!synced.agreementsOk) {
-        router.replace("/agreements");
+        router.replace("/terms");
         return;
       }
 
-      /* Session cookies restored — let `app/page.tsx` route to onboarding / home / jobs */
+      /* Session cookies restored — let `app/page.tsx` route to onboarding / home / driver jobs */
     });
 
     return () => unsub();

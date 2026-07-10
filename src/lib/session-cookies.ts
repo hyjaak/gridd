@@ -3,7 +3,7 @@
 import Cookies from "js-cookie";
 import type { UserRole } from "@/types";
 
-/** Client-readable cookies so middleware sees the session on the next navigation without delay. */
+/** Client-readable cookies so the edge proxy sees the session on the next navigation without delay. */
 const SESSION = "gridd-session";
 const ROLE = "gridd-role";
 const AGR = "gridd-agreements-ok";

@@ -19,7 +19,7 @@ export function useRequireAuth(allowedRoles: Allowed[]) {
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      router.replace("/login");
+      router.replace("/");
       return;
     }
     if (!role) {
@@ -28,8 +28,8 @@ export function useRequireAuth(allowedRoles: Allowed[]) {
     }
     const allowed = allowedKey.split("|") as Allowed[];
     if (!allowed.includes(role)) {
-      if (role === "driver") router.replace("/jobs");
-      else if (role === "admin") router.replace("/admin/dashboard");
+      if (role === "driver") router.replace("/driver/jobs");
+      else if (role === "ceo") router.replace("/admin/dashboard");
       else router.replace("/home");
     }
   }, [loading, user, role, router, allowedKey]);

@@ -1,4 +1,6 @@
+import type { DocumentReference } from "firebase-admin/firestore";
 import type { DriverTier, Job, Provider, User, UserRole } from "@/types";
+import { filterProvidersForPublicList } from "@/lib/provider-eligibility-server";
 import admin, { adminDb } from "@/lib/firebase-admin";
 
 function requireAdminDb() {
@@ -12,13 +14,21 @@ export async function getUser(uid: string): Promise<User | null> {
   return snap.exists ? (snap.data() as User) : null;
 }
 
-/** Server-side: `users` first (customer/admin/legacy driver), then `providers` → driver. */
+/** Server-side: `admins` CEO allowlist, then `users`, then `providers` → driver. */
 export async function getUserRole(uid: string): Promise<UserRole | null> {
   const db = requireAdminDb();
+  const adminSnap = await db.collection("admins").doc(uid).get();
+  if (adminSnap.exists) {
+    const d = adminSnap.data() as { role?: string; isCEO?: boolean; approved?: boolean };
+    if (d.approved !== false && (d.role === "ceo" || d.isCEO === true)) {
+      return "ceo";
+    }
+  }
   const userSnap = await db.collection("users").doc(uid).get();
   if (userSnap.exists) {
-    const r = userSnap.data()?.role as UserRole | undefined;
-    if (r === "admin" || r === "customer" || r === "driver") return r;
+    const r = userSnap.data()?.role as string | undefined;
+    if (r === "admin") return "ceo";
+    if (r === "ceo" || r === "customer" || r === "driver") return r as UserRole;
     return "customer";
   }
   const provSnap = await db.collection("providers").doc(uid).get();
@@ -121,14 +131,22 @@ export async function listProvidersAdmin(limit = 500): Promise<Provider[]> {
   return snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Provider, "uid">) }));
 }
 
+export async function getProvider(uid: string): Promise<(Provider & { uid: string }) | null> {
+  const db = requireAdminDb();
+  const snap = await db.collection("providers").doc(uid).get();
+  if (!snap.exists) return null;
+  return { uid: snap.id, ...(snap.data() as Omit<Provider, "uid">) };
+}
+
 export async function listActiveProvidersTop3(): Promise<Provider[]> {
   const db = requireAdminDb();
   const snap = await db
     .collection("providers")
     .orderBy("rating", "desc")
-    .limit(3)
+    .limit(24)
     .get();
-  return snap.docs.map((d) => d.data() as Provider);
+  const rows = snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Provider, "uid">) }));
+  return filterProvidersForPublicList(rows).slice(0, 3);
 }
 
 /** Prefer providers in the same ZIP when the field exists; otherwise top-rated. */
@@ -143,7 +161,8 @@ export async function listProvidersNearZip(zip: string | undefined): Promise<Pro
     .get()
     .catch(() => null);
   if (snap && !snap.empty) {
-    return snap.docs.map((d) => d.data() as Provider);
+    const rows = snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Provider, "uid">) }));
+    return filterProvidersForPublicList(rows);
   }
   return listActiveProvidersTop3();
 }
@@ -159,7 +178,10 @@ export async function listProvidersForServiceTop3(serviceId: string): Promise<Pr
     .get()
     .catch(() => null);
 
-  if (snap) return snap.docs.map((d) => d.data() as Provider);
+  if (snap) {
+    const rows = snap.docs.map((d) => ({ uid: d.id, ...(d.data() as Omit<Provider, "uid">) }));
+    return filterProvidersForPublicList(rows);
+  }
   return await listActiveProvidersTop3();
 }
 
@@ -249,12 +271,137 @@ export async function incrementUserPoints(uid: string, delta: number) {
 
 export async function incrementUserWallet(uid: string, deltaCents: number) {
   const db = requireAdminDb();
-  await db.collection("users").doc(uid).set(
-    {
-      walletBalanceCents: admin.firestore.FieldValue.increment(deltaCents),
-    },
-    { merge: true },
-  );
+  const inc = {
+    walletBalanceCents: admin.firestore.FieldValue.increment(deltaCents),
+  };
+  const userRef = db.collection("users").doc(uid);
+  const provRef = db.collection("providers").doc(uid);
+  const provSnap = await provRef.get();
+  const batch = db.batch();
+  batch.set(userRef, inc, { merge: true });
+  if (provSnap.exists) {
+    batch.set(provRef, inc, { merge: true });
+  }
+  await batch.commit();
+}
+
+/** Peer-to-peer GRIDD wallet transfer (users + providers docs kept in sync when both exist). */
+export async function transferWalletBetweenUsers(opts: {
+  fromUid: string;
+  toUid: string;
+  amountCents: number;
+  fromLabel: string;
+  toLabel: string;
+}) {
+  const db = requireAdminDb();
+  const { fromUid, toUid, amountCents, fromLabel, toLabel } = opts;
+  if (amountCents < 1) throw new Error("Invalid amount");
+  if (fromUid === toUid) throw new Error("Cannot send to yourself");
+
+  await db.runTransaction(async (tx) => {
+    const fromUserRef = db.collection("users").doc(fromUid);
+    const fromSnap = await tx.get(fromUserRef);
+    if (!fromSnap.exists) throw new Error("Sender profile not found");
+    const bal = (fromSnap.data()?.walletBalanceCents ?? 0) as number;
+    if (bal < amountCents) throw new Error("Insufficient balance");
+
+    const toUserRef = db.collection("users").doc(toUid);
+    const toProvRef = db.collection("providers").doc(toUid);
+    const toUserSnap = await tx.get(toUserRef);
+    const toProvSnap = await tx.get(toProvRef);
+    if (!toUserSnap.exists && !toProvSnap.exists) throw new Error("Recipient not found");
+
+    const incNeg = { walletBalanceCents: admin.firestore.FieldValue.increment(-amountCents) };
+    const incPos = { walletBalanceCents: admin.firestore.FieldValue.increment(amountCents) };
+
+    tx.update(fromUserRef, incNeg);
+    const fromProvRef = db.collection("providers").doc(fromUid);
+    const fromProvSnap = await tx.get(fromProvRef);
+    if (fromProvSnap.exists) {
+      tx.update(fromProvRef, incNeg);
+    }
+
+    if (toUserSnap.exists) {
+      tx.update(toUserRef, incPos);
+    }
+    if (toProvSnap.exists) {
+      tx.update(toProvRef, incPos);
+    }
+  });
+
+  const db2 = requireAdminDb();
+  const now = new Date().toISOString();
+  await db2.collection("walletTx").add({
+    uid: fromUid,
+    amountCents: amountCents,
+    kind: "debit",
+    category: "transfer_out",
+    label: fromLabel,
+    peerUid: toUid,
+    createdAt: now,
+    icon: "📤",
+  });
+  await db2.collection("walletTx").add({
+    uid: toUid,
+    amountCents: amountCents,
+    kind: "credit",
+    category: "transfer_in",
+    label: toLabel,
+    peerUid: fromUid,
+    createdAt: now,
+    icon: "📥",
+  });
+}
+
+/** After Stripe transfer to Connect account — debit platform-side wallet ledger. */
+export async function debitUserWalletForCashout(uid: string, amountCents: number) {
+  const db = requireAdminDb();
+  const inc = {
+    walletBalanceCents: admin.firestore.FieldValue.increment(-amountCents),
+  };
+  const userRef = db.collection("users").doc(uid);
+  const provRef = db.collection("providers").doc(uid);
+  const provSnap = await provRef.get();
+  const batch = db.batch();
+  batch.set(userRef, inc, { merge: true });
+  if (provSnap.exists) {
+    batch.set(provRef, inc, { merge: true });
+  }
+  await batch.commit();
+}
+
+export async function addWalletTxCashout(opts: { uid: string; amountCents: number; stripeTransferId: string }) {
+  const db = requireAdminDb();
+  await db.collection("walletTx").add({
+    uid: opts.uid,
+    amountCents: opts.amountCents,
+    kind: "debit",
+    category: "cashout",
+    label: "Cash out",
+    createdAt: new Date().toISOString(),
+    icon: "💸",
+    stripeTransferId: opts.stripeTransferId,
+  });
+}
+
+/** Ledger row for wallet UI — written from Stripe webhook (admin). */
+export async function addWalletTxCredit(opts: {
+  uid: string;
+  amountCents: number;
+  label: string;
+  stripePaymentIntentId: string;
+}) {
+  const db = requireAdminDb();
+  await db.collection("walletTx").add({
+    uid: opts.uid,
+    amountCents: opts.amountCents,
+    kind: "credit",
+    category: "payment",
+    label: opts.label,
+    createdAt: new Date().toISOString(),
+    icon: "⚡",
+    stripePaymentIntentId: opts.stripePaymentIntentId,
+  });
 }
 
 /** After a completed job — increment provider stats (payout credited) */
@@ -269,11 +416,45 @@ export async function updateProviderStats(uid: string, payoutCents: number) {
   );
 }
 
+/** After job completion — free driver for the next gig */
+export async function clearProviderActiveJob(uid: string) {
+  const db = requireAdminDb();
+  await db.collection("providers").doc(uid).set(
+    {
+      activeJob: null,
+      status: "on_the_gridd",
+      isOnline: true,
+    },
+    { merge: true },
+  );
+}
+
 export async function blockUserEverywhere(uid: string) {
   const db = requireAdminDb();
   const batch = db.batch();
   batch.set(db.collection("users").doc(uid), { blocked: true }, { merge: true });
   batch.set(db.collection("providers").doc(uid), { blocked: true }, { merge: true });
   await batch.commit();
+}
+
+/** Delete a Porch post and subcollections (comments, votes). Chunks batches (500 ops). */
+export async function deletePorchPostCascadeAdmin(postId: string): Promise<void> {
+  const db = requireAdminDb();
+  const postRef = db.collection("porch").doc(postId);
+  const commentsSnap = await postRef.collection("comments").get();
+  const votesSnap = await postRef.collection("votes").get();
+  const toDelete: DocumentReference[] = [
+    ...commentsSnap.docs.map((d) => d.ref),
+    ...votesSnap.docs.map((d) => d.ref),
+    postRef,
+  ];
+  const chunk = 450;
+  for (let i = 0; i < toDelete.length; i += chunk) {
+    const batch = db.batch();
+    for (const ref of toDelete.slice(i, i + chunk)) {
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
 }
 

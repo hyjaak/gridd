@@ -3,14 +3,16 @@ import { browserLocalPersistence, getAuth, setPersistence } from "firebase/auth"
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// Hardcoded config — works immediately (optional: override with NEXT_PUBLIC_* in .env.local)
+// Optional NEXT_PUBLIC_* overrides — storage bucket must match Firebase Console → Storage exactly.
 const firebaseConfig = {
-  apiKey: "AIzaSyCfk8V0zwPjMKZUkJBjoSCh39AKV9vp50c",
-  authDomain: "gridd-3edba.firebaseapp.com",
-  projectId: "gridd-3edba",
-  storageBucket: "gridd-3edba.firebasestorage.app",
-  messagingSenderId: "174687912980",
-  appId: "1:174687912980:web:0e0b4bdab61ff2762ed301",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyCfk8V0zwPjMKZUkJBjoSCh39AKV9vp50c",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? "gridd-3edba.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "gridd-3edba",
+  storageBucket:
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? "gridd-3edba.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "174687912980",
+  appId:
+    process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? "1:174687912980:web:0e0b4bdab61ff2762ed301",
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);

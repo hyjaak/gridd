@@ -31,17 +31,22 @@ export async function POST(req: Request) {
   }
 
   const html = griddEmailShell(`
-    <p style="font-size:18px;font-weight:700;color:#00FF88;margin-top:16px;">You&apos;re in the grid.</p>
+    <p style="font-size:18px;font-weight:700;color:#00FF88;margin-top:16px;">Welcome to GRIDD! 🔥</p>
     <p style="font-size:16px;line-height:1.6;color:#ccc;">Hi ${escapeHtml(name)},</p>
-    <p style="font-size:15px;line-height:1.6;color:#aaa;">Your driver account is now <strong style="color:#00FF88;">active</strong>.</p>
-    <p style="font-size:15px;line-height:1.6;color:#aaa;">Download the app and go online to start accepting jobs. You keep <strong>85%</strong> of every job.</p>
-    <a href="https://gridd.click/login" style="display:inline-block;margin-top:20px;background:linear-gradient(135deg,#00FF88,#00CC66);color:#000;text-decoration:none;font-weight:800;padding:14px 28px;border-radius:12px;">Open GRIDD</a>
+    <p style="font-size:15px;line-height:1.6;color:#aaa;">You&apos;re officially approved to start earning on the GRIDD platform.</p>
+    <p style="font-size:15px;line-height:1.6;color:#fbbf24;font-weight:600;">IMPORTANT REMINDER:</p>
+    <p style="font-size:15px;line-height:1.6;color:#aaa;">Before accepting your first job, make sure you have active <strong>commercial auto insurance</strong> or a <strong>commercial endorsement</strong> on your personal policy.</p>
+    <p style="font-size:15px;line-height:1.6;color:#aaa;">This protects <strong>you</strong> if anything happens while you&apos;re working.</p>
+    <p style="font-size:16px;font-weight:700;color:#00FF88;margin-top:20px;">You can go ON THE GRIDD ⚡ now!</p>
+    <p style="font-size:14px;line-height:1.6;color:#888;">Questions? <a href="mailto:support@gridd.click" style="color:#00FF88;">support@gridd.click</a></p>
+    <p style="font-size:14px;color:#999;margin-top:20px;">— The GRIDD Team 👑</p>
+    <a href="https://gridd.click/" style="display:inline-block;margin-top:20px;background:linear-gradient(135deg,#00FF88,#00CC66);color:#000;text-decoration:none;font-weight:800;padding:14px 28px;border-radius:12px;">Open GRIDD</a>
   `);
 
   const { error } = await resend.emails.send({
     from: GRIDD_FROM_DRIVERS,
     to: email,
-    subject: "🎉 Welcome to GRIDD — You're Approved!",
+    subject: "✅ You're approved for GRIDD!",
     html,
   });
 

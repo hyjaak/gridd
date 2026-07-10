@@ -38,8 +38,9 @@ export async function GET(
 
   const uid = decoded.uid;
   const actor = await getUser(uid);
-  const isAdmin = actor?.role === "admin";
-  if (!isAdmin && job.customerUid !== uid && job.providerUid !== uid) {
+  const ur = actor?.role as string | undefined;
+  const isCeoOrAdmin = ur === "ceo" || ur === "admin";
+  if (!isCeoOrAdmin && job.customerUid !== uid && job.providerUid !== uid) {
     return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 

@@ -1,0 +1,468 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /** Full production driver — documents + CEO approval. */
+    function providerEligible() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/providers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('documentsSubmitted', false) == true
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('accountStatus', '') == 'approved'
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('approvedByCEO', false) == true
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('blocked', false) != true;
+    }
+
+    /** CEO-granted demo — trial jobs before full approval (see src/lib/driver-gate.ts). */
+    function driverDemoActiveEligible() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/providers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('blocked', false) != true
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('demoMode', false) == true
+        && get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('demoJobsUsed', 0)
+           < get(/databases/$(database)/documents/providers/$(request.auth.uid)).data.get('demoJobsLimit', 3);
+    }
+
+    function providerOrDemoEligible() {
+      return providerEligible() || driverDemoActiveEligible();
+    }
+
+    function goingOnline(next) {
+      return next.get('status', '') in ['active', 'idle', 'on_the_gridd']
+        || next.get('isOnline', false) == true;
+    }
+
+    /** CEO dashboard — `admins/{uid}` with role ceo or isCEO (matches app server checks). */
+    function isCeoAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('approved', true) != false
+        && (
+          get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('role', '') == 'ceo'
+          || get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.get('isCEO', false) == true
+        );
+    }
+
+    /** Read-only for clients — writes via Admin API only */
+    match /demandSignals/{zip} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /providers/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && !request.resource.data.keys().hasAny(['demoMode', 'demoJobsUsed', 'demoJobsLimit', 'demoActivatedAt', 'demoActivatedBy'])
+        && (!goingOnline(request.resource.data) || providerOrDemoEligible());
+      allow update: if (request.auth != null && request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['demoMode', 'demoJobsUsed', 'demoJobsLimit', 'demoActivatedAt', 'demoActivatedBy'])
+        && (!goingOnline(request.resource.data) || providerOrDemoEligible()))
+        || (isCeoAdmin() && request.auth.uid != userId);
+    }
+
+    match /jobs/{jobId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.customerUid == request.auth.uid;
+      allow update: if request.auth != null && (
+        resource.data.get('customerUid', '') == request.auth.uid
+        || (
+          providerOrDemoEligible()
+          && resource.data.get('providerUid', '') == request.auth.uid
+        )
+        || (
+          providerOrDemoEligible()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['declinedByUids'])
+        )
+        || isCeoAdmin()
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isCeoAdmin());
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        request.auth.uid == userId
+        || (isCeoAdmin() && request.auth.uid != userId)
+      );
+    }
+
+    /** CEO / admin allowlist — own doc readable for client role resolution */
+    match /admins/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /chats/{jobId}/messages/{msgId} {
+      allow read, create: if request.auth != null;
+    }
+
+    match /notifications/{id} {
+      allow read: if request.auth != null && resource.data.get('userId', '') == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.get('userId', '') == request.auth.uid;
+      allow update: if request.auth != null && resource.data.get('userId', '') == request.auth.uid;
+    }
+
+    match /alerts/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if false;
+      allow delete: if isCeoAdmin();
+    }
+
+    match /porch/{postId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    match /porch/{postId}/comments/{commentId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    match /porch/{postId}/votes/{ballotId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /porchReports/{id} {
+      allow create: if request.auth != null;
+    }
+
+    /** Porch moderation — CEO reads; CEO updates from dashboard client */
+    match /reports/{reportId} {
+      allow read: if request.auth != null && (
+        resource.data.get('reportedBy', '') == request.auth.uid
+        || isCeoAdmin()
+      );
+      allow create: if request.auth != null;
+      allow update, delete: if isCeoAdmin();
+    }
+
+    match /walletTx/{id} {
+      allow read: if request.auth != null && (
+        resource.data.get('uid', '') == request.auth.uid
+        || isCeoAdmin()
+      );
+    }
+
+    /** Direct messages — 1:1 threads (CEO may read all for safety). */
+    match /conversations/{convId} {
+      allow read: if request.auth != null && (
+        request.auth.uid in resource.data.participants
+        || isCeoAdmin()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if request.auth != null
+        && request.auth.uid in resource.data.participants;
+      allow delete: if false;
+    }
+
+    match /conversations/{convId}/messages/{msgId} {
+      function dmConv() {
+        return get(/databases/$(database)/documents/conversations/$(convId)).data;
+      }
+      allow read: if request.auth != null && (
+        request.auth.uid in dmConv().participants
+        || isCeoAdmin()
+      );
+      allow create: if request.auth != null
+        && request.resource.data.senderId == request.auth.uid
+        && request.auth.uid in dmConv().participants
+        && dmConv().get('isBlocked', false) != true;
+      allow update: if request.auth != null
+        && request.auth.uid in dmConv().participants;
+      allow delete: if false;
+    }
+
+    /** Platform activity — users append own events; CEO reads full feed */
+    match /activityFeed/{eventId} {
+      allow read: if isCeoAdmin();
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.type is string
+        && request.resource.data.userName is string
+        && request.resource.data.description is string;
+      allow update, delete: if false;
+    }
+
+    /** DM moderation — CEO reads; CEO updates from dashboard */
+    match /dmReports/{id} {
+      allow read: if isCeoAdmin();
+      allow create: if false;
+      allow update: if isCeoAdmin();
+      allow delete: if false;
+    }
+
+    /** PriceIQ™ — CEO overrides; server (Admin SDK) also writes cache. Includes `smartDiscount` doc. */
+    match /pricingConfig/{serviceId} {
+      allow read: if request.auth != null;
+      allow write: if isCeoAdmin();
+    }
+
+    /** Smart Discount audit — customer creates own row; CEO reads all */
+    match /discounts/{discountId} {
+      allow read: if isCeoAdmin() || (request.auth != null && resource.data.get('customerId', '') == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.get('customerId', '') == request.auth.uid
+        && request.resource.data.keys().hasAll(['customerId', 'jobId', 'service', 'originalPrice', 'discountAmount', 'finalPrice', 'triggerRule', 'displayText', 'griddProfitAfter', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    /** Competitor price cache — populated by API / Cloud Functions only */
+    match /priceIntelligence/{id} {
+      allow read, write: if false;
+    }
+
+    /** CEO command center — written only via Admin SDK; CEO may read & mark read */
+    match /ceoAlerts/{id} {
+      allow read: if isCeoAdmin();
+      allow update: if isCeoAdmin();
+      allow create, delete: if false;
+    }
+
+    /** Security audit — written only via Admin SDK */
+    match /securityLogs/{id} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /failedLogins/{id} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /providers/{userId}/ceoNotes/{noteId} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /users/{userId}/ceoNotes/{noteId} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /griddScoreLedger/{id} {
+      allow read, write: if false;
+    }
+
+    match /referrals/{referralId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('referrerId', '') == request.auth.uid
+        || resource.data.get('referredUserId', '') == request.auth.uid
+      );
+      allow write: if false;
+    }
+
+    match /community/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isCeoAdmin();
+    }
+
+    match /driverLounge/{lobbyId} {
+      allow read: if (lobbyId == 'lobby' || lobbyId == 'main') && request.auth != null && (
+        isCeoAdmin()
+        || providerEligible()
+        || driverDemoActiveEligible()
+      );
+      allow create: if (lobbyId == 'lobby' || lobbyId == 'main') && isCeoAdmin();
+      allow update, delete: if (lobbyId == 'lobby' || lobbyId == 'main') && isCeoAdmin();
+
+      match /messages/{msgId} {
+        allow read: if (lobbyId == 'lobby' || lobbyId == 'main') && request.auth != null && (
+          isCeoAdmin()
+          || providerEligible()
+          || driverDemoActiveEligible()
+        );
+        allow create: if (lobbyId == 'lobby' || lobbyId == 'main')
+          && providerEligible()
+          && request.resource.data.get('senderId', '') == request.auth.uid
+          && request.resource.data.get('deleted', false) == false;
+        allow update: if (lobbyId == 'lobby' || lobbyId == 'main') && (
+          isCeoAdmin()
+          || (
+            providerEligible()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+          )
+        );
+        allow delete: if false;
+      }
+    }
+
+    /**
+     * BINTA GRIDD VAULT — CEO read-only from clients; all writes via Admin SDK (job complete / CEO API).
+     * Partner and drivers have no access.
+     */
+    match /vault/{docId} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /vaultTransactions/{txId} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    // ── GRIDD Bites (food / DoorDash Drive) ─────────────────
+    match /restaurants/{restaurantId} {
+      // Public read so Bites feed works before full auth funnel.
+      allow read: if true;
+      allow create, update, delete: if isCeoAdmin();
+      match /menu/{itemId} {
+        allow read: if true;
+        allow create, update, delete: if isCeoAdmin();
+      }
+      // Legacy/CEO-form subcollection used by manual restaurant entry form.
+      match /menuItems/{itemId} {
+        allow read: if true;
+        allow create, update, delete: if isCeoAdmin();
+      }
+    }
+
+    /**
+     * Bites: customer writes `biteOrders` (and legacy `orders` if used) with `customerId == request.auth.uid`.
+     * `get()` with default can mask a missing `customerId` — use direct field read on create.
+     */
+    match /orders/{orderId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('customerId', '') == request.auth.uid
+        || resource.data.get('isPublic', false) == true
+      );
+      allow create: if request.auth != null
+        && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if request.auth != null && (
+        resource.data.get('customerId', '') == request.auth.uid
+        || isCeoAdmin()
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['gridditUserIds', 'gridditCount', 'likeCount', 'commentCount'])
+      );
+    }
+
+    match /biteOrders/{orderId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('customerId', '') == request.auth.uid
+        || resource.data.get('isPublic', false) == true
+      );
+      allow create: if request.auth != null
+        && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if request.auth != null && (
+        resource.data.get('customerId', '') == request.auth.uid
+        || isCeoAdmin()
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['gridditUserIds', 'gridditCount', 'likeCount', 'commentCount'])
+      );
+    }
+
+    match /revenue/{docId} {
+      allow read: if isCeoAdmin();
+      allow write: if false;
+    }
+
+    match /restaurantApplications/{id} {
+      allow read, write: if false;
+    }
+
+    match /biteGroupOrders/{groupId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.get('hostId', '') == request.auth.uid;
+      allow update, delete: if request.auth != null && (
+        resource.data.get('hostId', '') == request.auth.uid || isCeoAdmin()
+      );
+    }
+
+    /** Customer/driver ratings — author writes their own; CEO full access. */
+    match /ratings/{ratingId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('raterId', '') == request.auth.uid
+        || resource.data.get('rateeId', '') == request.auth.uid
+      );
+      allow create: if request.auth != null
+        && request.resource.data.get('raterId', '') == request.auth.uid;
+      allow update, delete: if isCeoAdmin();
+    }
+
+    /** Admin action audit log — CEO read; server writes via Admin SDK. */
+    match /adminActions/{actionId} {
+      allow read: if isCeoAdmin();
+      allow create: if isCeoAdmin();
+      allow update, delete: if false;
+    }
+
+    /** Platform-wide config flags — CEO writes, authenticated users read. */
+    match /systemConfig/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isCeoAdmin();
+    }
+
+    /** Service packages / pricing tiers — public read for catalog, CEO writes. */
+    match /packages/{pkgId} {
+      allow read: if true;
+      allow write: if isCeoAdmin();
+    }
+
+    /** Business accounts — owner read/write their own; CEO full access. */
+    match /businesses/{businessId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('ownerUid', '') == request.auth.uid
+        || request.auth.uid in resource.data.get('memberUids', [])
+      );
+      allow create: if request.auth != null
+        && request.resource.data.get('ownerUid', '') == request.auth.uid;
+      allow update: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('ownerUid', '') == request.auth.uid
+      );
+      allow delete: if isCeoAdmin();
+    }
+
+    /** Invoices — owner reads their own; CEO full access; server creates. */
+    match /invoices/{invoiceId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('customerId', '') == request.auth.uid
+        || resource.data.get('businessOwnerUid', '') == request.auth.uid
+      );
+      allow create: if isCeoAdmin();
+      allow update, delete: if isCeoAdmin();
+    }
+
+    /** Generic top-level direct messages — sender writes own; CEO can read all. */
+    match /messages/{messageId} {
+      allow read: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('senderId', '') == request.auth.uid
+        || resource.data.get('recipientId', '') == request.auth.uid
+      );
+      allow create: if request.auth != null
+        && request.resource.data.get('senderId', '') == request.auth.uid;
+      allow update: if request.auth != null && (
+        isCeoAdmin()
+        || resource.data.get('senderId', '') == request.auth.uid
+      );
+      allow delete: if isCeoAdmin();
+    }
+
+    /**
+     * Final CEO-override safety net. CEO admins always get full read/write on
+     * any document under the database (rules evaluate `allow` as OR across
+     * matching rules, so this only widens — it never blocks user-owned access).
+     */
+    /** GRIDD Dispatch Cockpit — CEO-only jobs board (separate collection from existing jobs) */
+    match /dispatchJobs/{jobId} {
+      allow read, write: if request.auth.uid == "51hByaxOO4NTrTbIndZ4uRUhKhU2";
+      allow create: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if isCeoAdmin();
+    }
+  }
+}

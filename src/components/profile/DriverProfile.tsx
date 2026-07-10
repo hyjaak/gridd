@@ -3,22 +3,29 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { updateProfile } from "firebase/auth";
-import { doc, updateDoc } from "firebase/firestore";
-import { getFirestore } from "firebase/firestore";
+import { collection, doc, getFirestore, limit, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { Star } from "lucide-react";
 import { firebaseApp, firebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
+import { useGriddWalletData } from "@/hooks/useGriddWalletData";
 import { DriverNav } from "@/components/DriverNav";
+import { DriverProfileWalletCard } from "@/components/profile/DriverProfileWalletCard";
+import { DriverWalletProfileExtras } from "@/components/profile/DriverWalletProfileExtras";
+import { LoadGriddSheet } from "@/components/wallet/LoadGriddSheet";
 import { logOut } from "@/lib/auth";
-import { money } from "@/lib/job-tracking";
+import { canGoOnline, demoWalletRestricted } from "@/lib/driver-gate";
 import { DRIVER_SERVICE_META } from "@/lib/driver-service-meta";
+import { buildReferralCode } from "@/lib/referral-code";
 import {
   driverTierColor,
   driverTierDisplay,
   jobsRemainingForNextTier,
   tierProgressPct,
 } from "@/lib/profile-helpers";
+import { money as moneyJob, payoutBaseCentsFromTotal } from "@/lib/job-tracking";
 import type { DriverTier } from "@/types";
+import type { Job } from "@/types";
+import type { Provider } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -31,50 +38,132 @@ const GREEN = "#00FF88";
 
 const SERVICE_IDS = Object.keys(DRIVER_SERVICE_META);
 
-function nextFridayLabel(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const daysUntilFri = (5 - day + 7) % 7 || 7;
-  const fri = new Date(d);
-  fri.setDate(d.getDate() + daysUntilFri);
-  return fri.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+function payoutForJob(job: Job): number {
+  if (typeof job.providerPayoutCents === "number") return job.providerPayoutCents;
+  const total = job.chargedTotalCents ?? job.amountCents ?? 0;
+  return payoutBaseCentsFromTotal(total);
 }
 
-function walletCentsFromUser(p: { walletBalanceCents?: number; walletBalance?: number } | null) {
-  if (!p) return 0;
-  if (typeof p.walletBalanceCents === "number") return p.walletBalanceCents;
-  if (typeof p.walletBalance === "number") return Math.round(p.walletBalance * 100);
-  return 0;
+function MenuSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-6">
+      <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">{title}</p>
+      <Card className="overflow-hidden border p-0" style={{ background: CARD, borderColor: BORDER }}>
+        {children}
+      </Card>
+    </div>
+  );
+}
+
+function MenuRow({
+  href,
+  icon,
+  label,
+  right,
+}: {
+  href: string;
+  icon: string;
+  label: string;
+  right?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 border-b border-zinc-800/80 px-4 py-3.5 text-sm text-zinc-200 transition hover:bg-white/[0.03] last:border-b-0"
+    >
+      <span className="text-lg">{icon}</span>
+      <span className="min-w-0 flex-1">{label}</span>
+      {right ? <span className="shrink-0 text-xs text-zinc-500">{right}</span> : null}
+      <span className="text-zinc-600">›</span>
+    </Link>
+  );
 }
 
 export function DriverProfile() {
   const { user, profile } = useAuth();
   const db = useMemo(() => (firebaseApp ? getFirestore(firebaseApp) : null), []);
+  const walletData = useGriddWalletData();
+  const [provider, setProvider] = useState<Provider | null>(null);
+  const [completedJobs, setCompletedJobs] = useState<Job[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
+  const [loadOpen, setLoadOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user?.uid || !db || !profile || profile.referralCode) return;
+    const code = buildReferralCode(profile.name, user.email ?? undefined);
+    void updateDoc(doc(db, "providers", user.uid), { referralCode: code }).catch(() => null);
+  }, [user?.uid, db, profile?.referralCode, profile?.name, user?.email]);
+
+  useEffect(() => {
+    if (!firebaseApp || !user?.uid) return;
+    const dbf = getFirestore(firebaseApp);
+    const unsub = onSnapshot(doc(dbf, "providers", user.uid), (snap) => {
+      if (!snap.exists()) {
+        setProvider(null);
+        return;
+      }
+      setProvider({ uid: snap.id, ...(snap.data() as Omit<Provider, "uid">) });
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!firebaseApp || !user?.uid) return;
+    const dbf = getFirestore(firebaseApp);
+    const q = query(collection(dbf, "jobs"), where("providerUid", "==", user.uid), limit(400));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Omit<Job, "id">) }))
+          .filter((j) => j.status === "completed") as Job[];
+        setCompletedJobs(rows);
+      },
+      () => setCompletedJobs([]),
+    );
+    return () => unsub();
+  }, [user?.uid]);
 
   const tier = (profile?.driverTier ?? "starter") as DriverTier;
   const completed = profile?.completedJobCount ?? 0;
   const { remaining, next } = jobsRemainingForNextTier(tier, completed);
   const nextLabel = next ? driverTierDisplay(next) : "max";
   const pct = tierProgressPct(tier, completed);
-  const docs = profile?.documents;
-  const vehicleLine = docs
-    ? `${docs.vehicleYear ?? ""} ${docs.vehicleMake ?? ""} ${docs.vehicleModel ?? ""} ${docs.vehicleColor ?? ""}`.trim()
-    : "—";
-  const plate = docs?.licensePlate && docs?.plateState ? `${docs.plateState} ${docs.licensePlate}` : "—";
 
-  const bankOk = Boolean(profile?.stripeConnectId || profile?.bankConnected);
-  const weekEst = profile?.lifetimeEarningsCents
-    ? Math.round((profile.lifetimeEarningsCents / 100) * 0.05)
-    : 0;
+  const walletUnlocked = canGoOnline(provider);
+  const demoLocked = provider ? demoWalletRestricted(provider) : false;
+  const canUseWallet = walletUnlocked && !demoLocked;
 
-  const licenseOk = Boolean(docs?.licenseExpiry);
-  const insSoon = useMemo(() => {
-    if (!docs?.insuranceExpiry) return false;
-    const t = new Date(docs.insuranceExpiry).getTime();
-    return t < Date.now() + 30 * 24 * 60 * 60 * 1000;
-  }, [docs?.insuranceExpiry]);
+  const earningsToday = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const t0 = start.getTime();
+    let sum = 0;
+    for (const j of completedJobs) {
+      const ct = new Date(j.completedAt ?? j.createdAt).getTime();
+      if (ct >= t0) sum += payoutForJob(j);
+    }
+    return sum;
+  }, [completedJobs]);
+
+  const earningsWeek = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let sum = 0;
+    for (const j of completedJobs) {
+      const ct = new Date(j.completedAt ?? j.createdAt).getTime();
+      if (ct >= weekAgo) sum += payoutForJob(j);
+    }
+    return sum;
+  }, [completedJobs]);
+
+  const allTimeCents = profile?.lifetimeEarningsCents ?? 0;
 
   const toggleService = useCallback(
     async (id: string) => {
@@ -87,18 +176,10 @@ export function DriverProfile() {
     [db, user, profile?.serviceIds],
   );
 
-  const setNotif = useCallback(
-    async (key: "notifPush" | "notifSmsDriver" | "notifEmailDriver", val: boolean) => {
+  const patchNotif = useCallback(
+    async (key: "notifPush" | "notifSmsDriver" | "notifEmailDriver" | "notifJobAlerts" | "notifChat" | "notifPayment", val: boolean) => {
       if (!db || !user) return;
       await updateDoc(doc(db, "providers", user.uid), { [key]: val });
-    },
-    [db, user],
-  );
-
-  const saveDistance = useCallback(
-    async (miles: number) => {
-      if (!db || !user) return;
-      await updateDoc(doc(db, "providers", user.uid), { maxDistanceMiles: miles });
     },
     [db, user],
   );
@@ -119,22 +200,17 @@ export function DriverProfile() {
 
   const initial = (profile?.name ?? user?.email ?? "?").slice(0, 1).toUpperCase();
 
-  const [distMiles, setDistMiles] = useState(25);
-  useEffect(() => {
-    setDistMiles(profile?.maxDistanceMiles ?? 25);
-  }, [profile?.maxDistanceMiles]);
-
-  const statusLabel = useMemo(() => {
-    const x = (profile?.providerStatus ?? "offline").toLowerCase();
-    if (x === "active") return "Online";
-    if (x === "idle") return "Idle";
-    return "Offline";
-  }, [profile?.providerStatus]);
-
   return (
     <main className="min-h-screen pb-36" style={{ background: BG }}>
+      <LoadGriddSheet
+        open={loadOpen}
+        onClose={() => setLoadOpen(false)}
+        returnPath="/driver/profile"
+        walletUnlocked={canUseWallet}
+      />
+
       <div className="mx-auto max-w-2xl px-4 pb-8 pt-8 sm:px-6">
-        {/* Header */}
+        {/* Driver card */}
         <section className="flex flex-col items-center text-center">
           <div
             className="flex h-28 w-28 items-center justify-center rounded-full text-4xl font-black text-black shadow-lg"
@@ -150,70 +226,87 @@ export function DriverProfile() {
             )}
           </div>
           <h1 className="mt-4 text-2xl font-bold text-zinc-100">{profile?.name ?? "Driver"}</h1>
-          <p className="text-sm text-zinc-500">{profile?.email ?? user?.email}</p>
-          <div className="mt-2 flex items-center gap-1 text-amber-400">
+          <span className="mt-2 inline-block rounded-full border border-[#00FF88]/40 bg-[#00FF88]/10 px-3 py-1 text-xs font-bold text-[#00FF88]">
+            GRIDD Driver
+          </span>
+          <div className="mt-3 flex items-center gap-1 text-amber-400">
             <Star className="h-5 w-5 fill-current" />
             <span className="font-mono text-lg">{(profile?.rating ?? 5).toFixed(1)}</span>
           </div>
-          <span
-            className="mt-2 inline-block rounded-full px-3 py-1 text-xs font-bold"
-            style={{
-              background: `${driverTierColor(tier)}22`,
-              color: driverTierColor(tier),
-              border: `1px solid ${driverTierColor(tier)}55`,
-            }}
-          >
-            {driverTierDisplay(tier)}
-          </span>
-          <p className="mt-2 text-sm text-zinc-500">
-            Status:{" "}
-            <span
-              style={{
-                color: statusLabel === "Offline" ? "#888" : statusLabel === "Idle" ? ACCENT : GREEN,
-              }}
-            >
-              {statusLabel}
-            </span>
+          <p className="mt-2 text-sm text-zinc-400">
+            Jobs completed: <span className="font-mono text-zinc-200">{completed}</span>
           </p>
-          <Button type="button" variant="secondary" className="mt-4" onClick={openEdit}>
-            Edit Profile
-          </Button>
-        </section>
-
-        {/* Stats */}
-        <section className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            ["Total earned", money(profile?.lifetimeEarningsCents ?? 0)],
-            ["Jobs done", String(completed)],
-            ["Rating", (profile?.rating ?? 5).toFixed(1)],
-            ["Equity", `${profile?.equityShares ?? 0} shares`],
-          ].map(([k, v]) => (
-            <Card key={k} className="border p-4" style={{ background: CARD, borderColor: BORDER }}>
-              <div className="text-[10px] uppercase tracking-wide text-zinc-500">{k}</div>
-              <div className="mt-1 font-mono text-sm font-semibold text-zinc-100">{v}</div>
-            </Card>
-          ))}
-        </section>
-
-        <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
-          <h2 className="text-sm font-semibold text-zinc-200">GRIDD Wallet</h2>
-          <p className="mt-1 text-xs text-zinc-500">
-            Balance + virtual card, points, and transaction history (same as the Wallet tab).
-          </p>
-          <p className="mt-3 font-mono text-2xl font-bold text-[#00FF88]">
-            {money(walletCentsFromUser(profile))}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button type="button" variant="secondary" onClick={openEdit}>
+              Edit name
+            </Button>
             <Link
-              href="/driver/wallet"
-              className="rounded-xl bg-[#00FF88] px-4 py-2 text-sm font-bold text-black"
+              href="/driver/settings"
+              className="rounded-full border border-[#1e1e1e] bg-[#0a0a0a] px-4 py-2 text-sm font-medium text-white transition hover:border-[#ff6b00]/50"
             >
-              Open wallet
-            </Link>
-            <Link href="/driver/earnings" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300">
-              Payouts &amp; bank
+              All settings
             </Link>
           </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2 text-center text-[11px] text-zinc-500">
+            <Link href="/rules" className="text-[#ff6b00] hover:underline">
+              Porch rules
+            </Link>
+            <span>·</span>
+            <Link href="/driver-rules" className="text-[#ff6b00] hover:underline">
+              Driver code
+            </Link>
+            <span>·</span>
+            <Link href="/how-it-works" className="text-[#ff6b00] hover:underline">
+              How it works
+            </Link>
+            <span>·</span>
+            <Link href="/trust" className="text-[#ff6b00] hover:underline">
+              Trust
+            </Link>
+          </div>
+        </section>
+
+        {/* Wallet */}
+        <div id="wallet" className="mt-8 scroll-mt-24">
+          <DriverProfileWalletCard
+            balanceCents={walletData.balanceCents}
+            walletUnlocked={walletUnlocked}
+            demoWalletRestricted={demoLocked}
+            onOpenLoad={() => setLoadOpen(true)}
+          />
+        </div>
+
+        <DriverWalletProfileExtras
+          profileName={profile?.name}
+          prefs={walletData.prefs}
+          walletUnlocked={walletUnlocked}
+          demoWalletRestricted={demoLocked}
+          onOpenLoad={() => setLoadOpen(true)}
+        />
+
+        {/* Earnings */}
+        <Card className="mt-8 border p-5" style={{ background: CARD, borderColor: BORDER }}>
+          <h2 className="text-sm font-semibold text-zinc-200">💰 Earnings</h2>
+          <div className="mt-3 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Today</span>
+              <span className="font-mono text-zinc-100">{moneyJob(earningsToday)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">This week</span>
+              <span className="font-mono text-zinc-100">{moneyJob(earningsWeek)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">All time</span>
+              <span className="font-mono text-zinc-100">{moneyJob(allTimeCents)}</span>
+            </div>
+          </div>
+          <Link
+            href="/driver/settings/earnings-history"
+            className="mt-4 block w-full rounded-xl border border-zinc-700 py-2.5 text-center text-sm font-medium text-[#00FF88] hover:bg-white/5"
+          >
+            View History →
+          </Link>
         </Card>
 
         {/* Tier progress */}
@@ -227,26 +320,21 @@ export function DriverProfile() {
           <div className="mt-3 h-2 w-full rounded-full bg-zinc-800">
             <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, background: ACCENT }} />
           </div>
-          <p className="mt-3 text-xs text-zinc-500">
-            Next perks: higher match priority, bonus multipliers, and priority support at {nextLabel}.
-          </p>
+          <span
+            className="mt-3 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold"
+            style={{
+              background: `${driverTierColor(tier)}22`,
+              color: driverTierColor(tier),
+              border: `1px solid ${driverTierColor(tier)}55`,
+            }}
+          >
+            {driverTierDisplay(tier)}
+          </span>
         </Card>
 
-        {/* Vehicle & services */}
+        {/* Services quick toggle */}
         <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold" style={{ color: ACCENT }}>
-                My vehicle
-              </h2>
-              <p className="mt-1 text-sm text-zinc-300">{vehicleLine || "Add in driver signup"}</p>
-              <p className="font-mono text-xs text-zinc-500">{plate}</p>
-            </div>
-            <Link href="/signup/driver-docs" className="text-xs font-semibold text-[#3B82F6] hover:underline">
-              Edit
-            </Link>
-          </div>
-          <h3 className="mt-6 text-sm font-semibold text-zinc-200">My services</h3>
+          <h2 className="text-sm font-semibold text-zinc-200">Services I offer</h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {SERVICE_IDS.map((id) => {
               const on = (profile?.serviceIds ?? SERVICE_IDS).includes(id);
@@ -268,132 +356,87 @@ export function DriverProfile() {
           </div>
         </Card>
 
-        {/* Documents */}
-        <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
-          <h2 className="text-sm font-semibold text-zinc-200">Documents</h2>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-400">
-            <li className="flex justify-between">
-              Driver&apos;s License
-              <span className={licenseOk ? "text-[#00FF88]" : "text-amber-400"}>
-                {licenseOk ? "On file" : "Needs update"}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              Insurance
-              <span className={insSoon ? "text-amber-400" : "text-[#00FF88]"}>
-                {insSoon ? "Expires soon" : "Verified"}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              Profile photo
-              <Link href="/signup/driver-docs" className="text-[#3B82F6] hover:underline">
-                Change photo
-              </Link>
-            </li>
-          </ul>
-          <Link
-            href="/signup/driver-docs"
-            className="mt-4 block w-full rounded-xl border border-zinc-700 py-2 text-center text-sm text-zinc-300"
-          >
-            Upload new documents
-          </Link>
-        </Card>
+        {/* Settings menu */}
+        <MenuSection title="My account">
+          <MenuRow href="/driver/settings" icon="👤" label="Personal info" />
+          <MenuRow href="/signup/driver-docs" icon="🚗" label="Vehicle info" />
+          <MenuRow href="/signup/driver-docs" icon="🪪" label="My documents" />
+          <MenuRow href="/driver/settings#service-area" icon="📍" label="Service area" />
+          <MenuRow href="/driver/settings#services-offer" icon="🔧" label="Services I offer" />
+        </MenuSection>
 
-        {/* Payout */}
-        <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
-          <h2 className="text-sm font-semibold text-zinc-200">Payouts</h2>
-          <p className="mt-2 text-sm text-zinc-400">
-            Bank:{" "}
-            <span className={bankOk ? "text-[#00FF88]" : "text-amber-400"}>{bankOk ? "Connected" : "Not connected"}</span>
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Next estimated payout ({nextFridayLabel()}):{" "}
-            <span className="font-mono text-zinc-300">~{money(weekEst * 100)}</span> (varies by jobs)
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/driver/earnings"
-              className="rounded-xl bg-[#00FF88] px-4 py-2 text-sm font-bold text-black"
-            >
-              {bankOk ? "View / change bank" : "Connect bank (Stripe)"}
-            </Link>
-            <Link href="/driver/earnings" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300">
-              Payout history
-            </Link>
-          </div>
-        </Card>
+        <MenuSection title="Payouts">
+          <MenuRow href="/driver/earnings" icon="🏦" label="Payout method" />
+          <MenuRow href="/driver/settings#payout-schedule" icon="📅" label="Payout schedule" />
+          <MenuRow href="/driver/settings" icon="🧾" label="Tax documents" right="In settings" />
+        </MenuSection>
 
-        {/* Settings */}
-        <Card className="mt-6 border p-5" style={{ background: CARD, borderColor: BORDER }}>
-          <h2 className="text-sm font-semibold text-zinc-200">Notifications</h2>
-          <div className="mt-3 space-y-3 text-sm">
-            {(
-              [
-                ["notifPush", "Push notifications", profile?.notifPush !== false],
-                ["notifSmsDriver", "SMS", profile?.notifSmsDriver === true],
-                ["notifEmailDriver", "Email", profile?.notifEmailDriver !== false],
-              ] as const
-            ).map(([key, label, def]) => (
-              <label key={key} className="flex items-center justify-between gap-4">
-                <span className="text-zinc-400">{label}</span>
-                <input
-                  type="checkbox"
-                  checked={def}
-                  onChange={(e) => void setNotif(key, e.target.checked)}
-                  className="h-4 w-4 accent-[#00FF88]"
-                />
-              </label>
-            ))}
-          </div>
-
-          <h3 className="mt-6 text-sm font-semibold text-zinc-200">Service area</h3>
-          <div className="mt-2 flex flex-wrap items-center gap-4">
-            <span className="text-xs text-zinc-500">ZIP {profile?.zip ?? docs?.serviceZip ?? "—"}</span>
-            <label className="flex flex-1 items-center gap-2 text-xs text-zinc-500">
-              Max miles ({distMiles})
+        <MenuSection title="Notifications">
+          <div className="border-b border-zinc-800/80 px-4 py-3.5">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-200">
+              <span>🔔 Job alerts</span>
               <input
-                type="range"
-                min={5}
-                max={100}
-                value={distMiles}
-                onChange={(e) => setDistMiles(Number(e.target.value))}
-                onMouseUp={(e) => void saveDistance(Number((e.target as HTMLInputElement).value))}
-                onTouchEnd={(e) => void saveDistance(Number((e.target as HTMLInputElement).value))}
-                className="flex-1 accent-[#00FF88]"
+                type="checkbox"
+                checked={profile?.notifJobAlerts !== false}
+                onChange={(e) => void patchNotif("notifJobAlerts", e.target.checked)}
+                className="h-5 w-5 accent-[#00FF88]"
               />
             </label>
           </div>
-
-          <h3 className="mt-6 text-sm font-semibold text-zinc-200">Account &amp; security</h3>
-          <div className="mt-2 space-y-2 text-sm">
-            <button type="button" className="block w-full text-left text-[#3B82F6] hover:underline">
-              Change email (contact support)
-            </button>
-            <Link href="/login" className="block text-[#3B82F6] hover:underline">
-              Reset password via email
-            </Link>
-            <p className="text-xs text-zinc-600">Two-factor authentication — coming soon</p>
-            <p className="text-xs text-zinc-600">Delete account — contact drivers@gridd.click</p>
+          <div className="border-b border-zinc-800/80 px-4 py-3.5">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-200">
+              <span>💬 Messages</span>
+              <input
+                type="checkbox"
+                checked={profile?.notifChat !== false}
+                onChange={(e) => void patchNotif("notifChat", e.target.checked)}
+                className="h-5 w-5 accent-[#00FF88]"
+              />
+            </label>
           </div>
+          <div className="border-b border-zinc-800/80 px-4 py-3.5">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-200">
+              <span>💸 Payments</span>
+              <input
+                type="checkbox"
+                checked={profile?.notifPayment !== false}
+                onChange={(e) => void patchNotif("notifPayment", e.target.checked)}
+                className="h-5 w-5 accent-[#00FF88]"
+              />
+            </label>
+          </div>
+          <MenuRow href="/driver/settings#dnd" icon="🌙" label="Do Not Disturb" />
+        </MenuSection>
 
-          <h3 className="mt-6 text-sm font-semibold text-zinc-200">Legal</h3>
-          <Link href="/agreements" className="mt-1 block text-sm text-[#3B82F6] hover:underline">
-            View signed agreements
-          </Link>
+        <MenuSection title="Support">
+          <MenuRow href="https://gridd.click" icon="❓" label="How-Tos" />
+          <MenuRow href="mailto:drivers@gridd.click" icon="💬" label="Get Help" />
+          <MenuRow href="mailto:feedback@gridd.click?subject=GRIDD%20Driver%20Feedback" icon="📝" label="Send Feedback" />
+          <MenuRow href="/terms" icon="📄" label="Terms & Privacy" />
+        </MenuSection>
 
-          <h3 className="mt-6 text-sm font-semibold text-zinc-200">Help</h3>
-          <a href="mailto:drivers@gridd.click" className="text-sm text-[#3B82F6] hover:underline">
-            drivers@gridd.click
-          </a>
-
+        <MenuSection title="Danger zone">
           <button
             type="button"
-            onClick={() => void logOut()}
-            className="mt-8 w-full rounded-xl border border-red-500/50 bg-red-950/30 py-3 text-sm font-bold text-red-400"
+            className="flex w-full items-center gap-3 border-b border-zinc-800/80 px-4 py-3.5 text-left text-sm text-zinc-200 hover:bg-white/[0.03]"
+            onClick={() => {
+              if (!window.confirm("Sign out of GRIDD on this device?")) return;
+              void logOut();
+            }}
           >
-            Sign out
+            <span className="text-lg">🚪</span>
+            <span className="flex-1">Sign out</span>
+            <span className="text-zinc-600">›</span>
           </button>
-        </Card>
+          <Link
+            href="/driver/settings#danger-zone"
+            className="flex items-center gap-3 px-4 py-3.5 text-sm text-red-400 hover:bg-red-950/20"
+          >
+            <span className="text-lg">❌</span>
+            <span className="flex-1">Delete account</span>
+            <span className="text-zinc-600">›</span>
+          </Link>
+        </MenuSection>
       </div>
 
       {editOpen ? (
