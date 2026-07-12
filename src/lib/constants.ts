@@ -10,6 +10,9 @@ export const PHONE_HREF = "tel:3138259887";
 /** Owner phone for Twilio notifications (E.164) */
 export const OWNER_PHONE = "+13138259887";
 
+/** Owner name shown in trust strip */
+export const OWNER_NAME = "Ibrahim";
+
 /** GRIDD Dispatch services — single source of truth. jobType values match Firestore dispatchJobs schema. */
 export type ServiceId = "delivery" | "errand" | "hauling";
 

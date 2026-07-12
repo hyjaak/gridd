@@ -1,7 +1,5 @@
 "use client";
 
-import { PHONE, PHONE_HREF } from "@/lib/constants";
-
 type Props = {
   show: boolean;
   photoUrl: string | null;
@@ -33,10 +31,10 @@ export default function DeliveredCard({ show, photoUrl }: Props) {
           Every GRIDD run ends exactly like this — proof in your texts.
         </p>
         <a
-          href={PHONE_HREF}
+          href="#bookSec"
           className="inline-block bg-[#0e9f6e] text-white font-bold text-[13.5px] px-[18px] py-2.5 rounded-full no-underline hover:bg-[#0a7a54] transition-colors"
         >
-          Book your run — {PHONE}
+          Book your run ↓
         </a>
       </div>
     </div>

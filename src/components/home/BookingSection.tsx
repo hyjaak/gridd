@@ -5,6 +5,7 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { MARKETS, PHONE, PHONE_HREF } from "@/lib/constants";
 import type { MarketKey, ServiceId } from "@/lib/constants";
+import TrustStrip from "./TrustStrip";
 
 const SVC_CARDS: { id: ServiceId; label: string; blurb: string; from: number }[] = [
   { id: "delivery", label: "Delivery", blurb: "Marketplace & store pickups", from: 45 },
@@ -98,6 +99,7 @@ export default function BookingSection({ market }: Props) {
           </button>
         ))}
       </div>
+      <TrustStrip />
       <form onSubmit={handleSubmit} className="flex flex-col">
         <div className="flex gap-2">
           <input

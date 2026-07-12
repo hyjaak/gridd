@@ -32,7 +32,8 @@ export default function LiveChip({ market, className = "" }: Props) {
         );
         const snap = await getCountFromServer(q);
         if (!cancelled) setCount(snap.data().count);
-      } catch {
+      } catch (err) {
+        console.error("LiveChip query failed:", err);
         if (!cancelled) setCount(null);
       }
     }

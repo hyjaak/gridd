@@ -53,7 +53,7 @@ export default function HomePage() {
       <main className="relative z-10">
         {/* Hero */}
         <ScrollSection id="hero">
-          <div className="stop">Pickup · {m.city} {m.state}</div>
+          <div className="stop">Pickup · {m.label}</div>
           <h1 className="text-[clamp(40px,6vw,74px)] font-[800] font-bricolage tracking-tight leading-tight mb-4">
             One run.<br />Start to done.
           </h1>
