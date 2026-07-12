@@ -199,3 +199,10 @@ body {
   animation: gridd-skeleton-shimmer 1.4s linear infinite;
   border-radius: 12px;
 }
+
+@keyframes cf-fall {
+  to {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0.2;
+  }
+}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
-import { Bebas_Neue, DM_Sans, Geist, Geist_Mono, Syne } from "next/font/google";
+import { Bebas_Neue, Bricolage_Grotesque, DM_Sans, Geist, Geist_Mono, Inter, Syne } from "next/font/google";
 import { AuthProvider } from "@/providers/AuthProvider";
 import "./globals.css";
 
@@ -30,10 +30,21 @@ const bebasNeue = Bebas_Neue({
   weight: "400",
 });
 
+const bricolage = Bricolage_Grotesque({
+  variable: "--font-bricolage",
+  subsets: ["latin"],
+  weight: "800",
+});
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "GRIDD — The Neighborhood Economy",
+  title: "GRIDD — One run, start to done",
   description:
-    "Book rides, home services, haul, roadside & more. PriceIQ™ pricing, The Porch for your block, and drivers who keep 85%.",
+    "Same-day van service — delivery, errands and light hauling with a flat price up front. Owner-operated, Dayton & Norcross.",
 };
 
 export default function RootLayout({
@@ -44,7 +55,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${dmSans.variable} ${bebasNeue.variable} min-h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} ${dmSans.variable} ${bebasNeue.variable} ${bricolage.variable} ${inter.variable} min-h-full antialiased`}
     >
       <body className="min-h-dvh w-full max-w-full overflow-x-hidden bg-[#060606] text-[#eeeeee]">
         <AuthProvider>
