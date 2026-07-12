@@ -70,8 +70,11 @@ export default function BookingSection({ market }: Props) {
         <h3 className="text-[28px] font-[800] font-bricolage tracking-tight leading-tight mb-1.5 text-[#101613]">
           Got it.
         </h3>
-        <p className="text-[15px] text-[#5c6a62]">
+        <p className="text-[15px] text-[#5c6a62] mb-2">
           You'll have a flat price within the hour — watch your texts.
+        </p>
+        <p className="text-[13px] text-[#5c6a62]">
+          The text comes from {PHONE} — save the number, that thread is your receipt.
         </p>
       </div>
     );
@@ -132,6 +135,9 @@ export default function BookingSection({ market }: Props) {
           className="border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white mb-2 resize-vertical min-h-[70px] focus:outline-none focus:border-[#0e9f6e]"
         />
         {error && <p className="text-[13px] text-red-500 mb-2">{error}</p>}
+        <p className="text-[12px] text-[#5c6a62] text-center -mt-1 mb-2">
+          We reply within the hour, Mon–Sat.
+        </p>
         <button
           type="submit"
           disabled={submitting}
@@ -146,6 +152,16 @@ export default function BookingSection({ market }: Props) {
           </a>
         </div>
       </form>
+      {/* B2B strip */}
+      <div className="mt-4 pt-4 border-t border-black/8 text-center">
+        <p className="text-[12.5px] text-[#5c6a62] leading-relaxed">
+          Run a shop or a crew? Weekly accounts + invoice billing — text{' '}
+          <strong className="text-[#101613]">'BIZ'</strong> to{' '}
+          <a href={PHONE_HREF} className="text-[#0e9f6e] font-bold no-underline">
+            {PHONE}
+          </a>
+        </p>
+      </div>
     </div>
   );
 }

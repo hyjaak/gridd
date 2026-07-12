@@ -5,12 +5,14 @@ import type { MarketKey } from "@/lib/constants";
 import { MARKETS, PHONE, PHONE_HREF } from "@/lib/constants";
 import Scene3D from "@/components/home/Scene3D";
 import TopBar from "@/components/home/TopBar";
+import UtilityBar from "@/components/home/UtilityBar";
 import RouteRail from "@/components/home/RouteRail";
 import ScrollSection from "@/components/home/ScrollSection";
 import LiveChip from "@/components/home/LiveChip";
 import DeliveredCard from "@/components/home/DeliveredCard";
 import Flash from "@/components/home/Flash";
 import BookingSection from "@/components/home/BookingSection";
+import FAQSection from "@/components/home/FAQSection";
 import { fireConfetti } from "@/components/home/confetti";
 
 export default function HomePage() {
@@ -44,6 +46,7 @@ export default function HomePage() {
       {/* Vignette */}
       <div className="fixed inset-0 z-5 pointer-events-none bg-[radial-gradient(ellipse_at_center,transparent_62%,rgba(16,22,19,.10)_100%)]" />
 
+      <UtilityBar market={market} />
       <TopBar market={market} onMarketChange={setMarket} />
       <RouteRail />
       <LiveChip market={market} />
@@ -153,6 +156,15 @@ export default function HomePage() {
           </a>
         </ScrollSection>
 
+        {/* FAQ */}
+        <ScrollSection>
+          <div className="stop">Quick answers</div>
+          <h2 className="text-[clamp(30px,4vw,48px)] font-[800] font-bricolage tracking-tight leading-tight mb-3">
+            Questions you shouldn't have to dig for.
+          </h2>
+          <FAQSection />
+        </ScrollSection>
+
         {/* Booking */}
         <ScrollSection align="right" id="bookSec">
           <div className="stop">Your turn · The work we do</div>
@@ -169,7 +181,13 @@ export default function HomePage() {
           <div className="text-white text-[18px] font-[800] font-bricolage">gridd</div>
           <div className="mt-1.5">GRIDD Technologies LLC · {m.city}, {m.state}</div>
         </div>
-        <div className="self-center">Owner-operated · Same-day when you call early</div>
+        <div className="self-center flex gap-4 items-center">
+          <a href="/privacy" className="text-[#9db3a8] hover:text-white transition-colors no-underline text-[13px]">Privacy</a>
+          <span aria-hidden="true">·</span>
+          <a href="/terms" className="text-[#9db3a8] hover:text-white transition-colors no-underline text-[13px]">Terms</a>
+          <span aria-hidden="true" className="hidden sm:inline">·</span>
+          <span className="hidden sm:inline">Owner-operated · Same-day when you call early</span>
+        </div>
       </footer>
 
       <style jsx>{`

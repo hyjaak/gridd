@@ -14,8 +14,8 @@ type Reviews = {
 const PROMISES = [
   "Flat price locked before we roll",
   "Text the second it's rolling",
-  "Photo proof at the drop-off",
-  "Pay AFTER it's done, not before",
+  "Photo proof at drop-off",
+  "Pay AFTER it's done — card, tap, or cash",
 ];
 
 export default function TrustStrip() {
