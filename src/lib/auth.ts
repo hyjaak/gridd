@@ -46,7 +46,7 @@ function requiredDocs(role: UserRole) {
 }
 
 function routeForRole(role: UserRole) {
-  if (role === "ceo") return "/admin/dashboard";
+  if (role === "ceo") return "/dispatch";
   if (role === "driver") return "/driver/jobs";
   return "/home";
 }
@@ -274,7 +274,7 @@ export async function sendVerificationEmailToCurrentUser() {
   });
 }
 
-export async function logIn(email: string, password: string) {
+export async function logIn(email: string, password: string, nextUrl?: string) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
   await assertNotBlockedOrSuspended(cred.user.uid);
   await cred.user.reload();
@@ -334,7 +334,13 @@ export async function logIn(email: string, password: string) {
     window.location.assign("/terms");
     return;
   }
-  window.location.assign(routeForRole(role));
+
+  // Honor nextUrl if provided, otherwise use default route for role
+  if (nextUrl) {
+    window.location.assign(nextUrl);
+  } else {
+    window.location.assign(routeForRole(role));
+  }
 }
 
 export async function logOut() {

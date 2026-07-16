@@ -23,13 +23,13 @@ export function buildScene(
   callbacks: SceneCallbacks
 ): SceneHandle {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const isMobile = matchMedia("(max-width:820px)").matches || "ontouchstart" in window;
 
   // Renderer
   const renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    preserveDrawingBuffer: true,
+    antialias: !isMobile,
   });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -50,7 +50,7 @@ export function buildScene(
   const sun = new THREE.DirectionalLight(0xfff3df, 1.05);
   sun.position.set(18, 30, 12);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(isMobile ? 1024 : 2048, isMobile ? 1024 : 2048);
   Object.assign(sun.shadow.camera, {
     left: -55,
     right: 55,
@@ -164,7 +164,8 @@ export function buildScene(
   const gMat = new THREE.MeshLambertMaterial({ color: 0x0e9f6e });
   const buildings: THREE.Mesh[] = [];
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-  for (let i = 0; i < 70; i++) {
+  const buildingCount = isMobile ? 40 : 70;
+  for (let i = 0; i < buildingCount; i++) {
     const z = rnd(-52, 40);
     const p = route.getPointAt(clamp((34 - z) / 78, 0, 1));
     const side = Math.random() > 0.5 ? 1 : -1;
@@ -176,7 +177,7 @@ export function buildScene(
     b.position.set(x, h / 2, z);
     b.castShadow = b.receiveShadow = true;
     b.userData.h = h;
-    if (h > 2.6) {
+    if (h > 2.6 && !isMobile) {
       const rows = Math.floor(h / 1.1);
       for (let r = 0; r < rows; r++) {
         const win = new THREE.Mesh(
@@ -192,7 +193,8 @@ export function buildScene(
   }
 
   // Trees
-  for (let i = 0; i < 50; i++) {
+  const treeCount = isMobile ? 24 : 50;
+  for (let i = 0; i < treeCount; i++) {
     const z = rnd(-52, 40);
     const p = route.getPointAt(clamp((34 - z) / 78, 0, 1));
     const side = Math.random() > 0.5 ? 1 : -1;
@@ -244,7 +246,8 @@ export function buildScene(
 
   // Clouds
   const clouds: THREE.Group[] = [];
-  for (let i = 0; i < 9; i++) {
+  const cloudCount = isMobile ? 5 : 9;
+  for (let i = 0; i < cloudCount; i++) {
     const g = new THREE.Group();
     const n = 2 + Math.floor(Math.random() * 2);
     for (let j = 0; j < n; j++) {
@@ -502,21 +505,21 @@ export function buildScene(
   const vanDark = new THREE.MeshLambertMaterial({ color: 0x101613 });
   const glassMat = new THREE.MeshLambertMaterial({ color: 0xbfe3d4 });
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.1, 0.78, 2.2),
+    new THREE.BoxGeometry(1.1, 0.85, 2.05),
     vanGreen
   );
   body.position.y = 0.62;
   body.castShadow = true;
   const cab = new THREE.Mesh(
-    new THREE.BoxGeometry(1.06, 0.5, 0.62),
+    new THREE.BoxGeometry(1.0, 0.42, 1.55),
     glassMat
   );
-  cab.position.set(0, 1.18, 0.55);
+  cab.position.set(0, 1.22, -0.02);
   const roofBox = new THREE.Mesh(
-    new THREE.BoxGeometry(1.06, 0.42, 1.28),
+    new THREE.BoxGeometry(1.04, 0.09, 1.65),
     vanGreen
   );
-  roofBox.position.set(0, 1.22, -0.4);
+  roofBox.position.set(0, 1.46, -0.02);
   roofBox.castShadow = true;
   const bumperF = new THREE.Mesh(
     new THREE.BoxGeometry(1.14, 0.16, 0.1),
@@ -601,6 +604,7 @@ export function buildScene(
   // Scroll tracking
   let target = 0;
   let current = 0;
+  let lastTime = performance.now();
   const measure = () =>
     clamp(
       window.scrollY /
@@ -649,9 +653,11 @@ export function buildScene(
 
   function frame() {
     rafId = requestAnimationFrame(frame);
-    current += (target - current) * (reduced ? 1 : 0.06);
-    const t = clamp(clamp(current, 0.0001, 0.9999) / 0.84, 0.0001, 0.9999);
     const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    current += (target - current) * (reduced ? 1 : 1 - Math.exp(-dt * 7));
+    const t = clamp(clamp(current, 0.0001, 0.9999) / 0.84, 0.0001, 0.9999);
 
     const p = route.getPointAt(t);
     const tan = route.getTangent(t);
@@ -831,22 +837,23 @@ export function buildScene(
     if (t > 0.972 && !photoTaken) {
       photoTaken = true;
       try {
+        renderer.render(scene, camera);
         const dataUrl = renderer.domElement.toDataURL("image/jpeg", 0.7);
         callbacks.onPhoto?.(dataUrl);
       } catch {
         /* silent */
       }
     }
+    // Reset one-shot flags when user scrolls back (t drops below 0.9)
     if (t < 0.9 && photoTaken) {
       photoTaken = false;
       confettiDone = false;
       callbacks.onDelivered?.(false);
     }
-    if (t > 0.975) {
+    // Card visibility: separate from confetti one-shot
+    const finale = t > 0.975;
+    if (finale) {
       callbacks.onDelivered?.(true);
-      if (!confettiDone && !reduced) {
-        confettiDone = true;
-      }
     } else {
       callbacks.onDelivered?.(false);
     }

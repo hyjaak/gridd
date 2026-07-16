@@ -186,7 +186,7 @@ function GoogleRoleFullscreen({ open, busy, error, onPickCustomer, onPickDriver,
   );
 }
 
-function LandingLoginModal({ open, onClose, onOpenSignup, onGoogleNeedsRole }) {
+function LandingLoginModal({ open, onClose, onOpenSignup, onGoogleNeedsRole, nextUrl }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -208,6 +208,9 @@ function LandingLoginModal({ open, onClose, onOpenSignup, onGoogleNeedsRole }) {
     setLoading(true);
     try {
       await logIn(email, password);
+      if (nextUrl) {
+        window.location.href = nextUrl;
+      }
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "Unable to sign in.");
@@ -237,6 +240,9 @@ function LandingLoginModal({ open, onClose, onOpenSignup, onGoogleNeedsRole }) {
     setLoading(true);
     try {
       await googleSignIn();
+      if (nextUrl) {
+        window.location.href = nextUrl;
+      }
     } catch (err) {
       setLoading(false);
       if (err instanceof GoogleNeedsRoleChoiceError) {
@@ -369,7 +375,7 @@ function InlineSpinner() {
   );
 }
 
-function LandingSignupModal({ open, onClose, onOpenLogin, signupAs, onGoogleNeedsRole }) {
+function LandingSignupModal({ open, onClose, onOpenLogin, signupAs, onGoogleNeedsRole, nextUrl }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -388,7 +394,7 @@ function LandingSignupModal({ open, onClose, onOpenLogin, signupAs, onGoogleNeed
   const title = signupAs === "driver" ? "Apply to drive" : "Create your account";
   const subtitle =
     signupAs === "driver"
-      ? "Start the driver application — you’ll add documents in the next step."
+      ? "Start the driver application — you'll add documents in the next step."
       : "Book jobs, Porch, and PriceIQ™ in one place.";
 
   async function onSubmit(e) {
@@ -411,6 +417,9 @@ function LandingSignupModal({ open, onClose, onOpenLogin, signupAs, onGoogleNeed
     try {
       const role = signupAs === "driver" ? "driver" : "customer";
       await signUp(email.trim(), password, name.trim(), role);
+      if (nextUrl) {
+        window.location.href = nextUrl;
+      }
     } catch (err) {
       setLoading(false);
       setError(err instanceof Error ? err.message : "Sign up failed.");
@@ -422,6 +431,9 @@ function LandingSignupModal({ open, onClose, onOpenLogin, signupAs, onGoogleNeed
     setLoading(true);
     try {
       await googleSignIn();
+      if (nextUrl) {
+        window.location.href = nextUrl;
+      }
     } catch (err) {
       setLoading(false);
       if (err instanceof GoogleNeedsRoleChoiceError) {
@@ -601,6 +613,17 @@ export function GriddLandingPage() {
     }
   }, []);
 
+  const [nextUrl, setNextUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    const next = p.get("next");
+    if (next) {
+      setNextUrl(next);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#030303] text-zinc-100">
       <GoogleRoleFullscreen
@@ -619,6 +642,7 @@ export function GriddLandingPage() {
           setAuthModal("signup");
           setSignupAs("customer");
         }}
+        nextUrl={nextUrl}
       />
       <LandingSignupModal
         open={authModal === "signup"}
@@ -628,6 +652,7 @@ export function GriddLandingPage() {
           setAuthModal("login");
         }}
         signupAs={signupAs}
+        nextUrl={nextUrl}
       />
       <div
         className="pointer-events-none fixed inset-0 -z-10"

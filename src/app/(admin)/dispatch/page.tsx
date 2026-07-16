@@ -1,68 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CEO_UID, SERVICES } from "@/lib/constants";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { LoadingScreen } from "@/components/LoadingScreen";
-
-type JobStatus = "request" | "quoted" | "accepted" | "assigned" | "in_progress" | "proof" | "paid" | "declined" | "cancelled";
-type JobType = "delivery" | "errand" | "hauling";
-type Market = "DAY" | "ATL";
-type Source = "form" | "sms" | "call";
-
-type DispatchJob = {
-  id: string;
-  market: Market;
-  status: JobStatus;
-  customerName: string;
-  customerPhone: string;
-  jobType: JobType;
-  pickupCity: string;
-  dropoffCity: string;
-  description: string;
-  source: Source;
-  quoteAmount?: number;
-  assignedTo?: string;
-  payoutPct: number;
-  proofPhotoUrl?: string;
-  createdAt?: Timestamp | null;
-  quotedAt?: Timestamp | null;
-  acceptedAt?: Timestamp | null;
-  completedAt?: Timestamp | null;
-  paidAt?: Timestamp | null;
-};
-
-const STATUS_BADGE_COLORS: Record<JobStatus, string> = {
-  request: "bg-yellow-100 text-yellow-800",
-  quoted: "bg-blue-100 text-blue-800",
-  accepted: "bg-purple-100 text-purple-800",
-  assigned: "bg-indigo-100 text-indigo-800",
-  in_progress: "bg-orange-100 text-orange-800",
-  proof: "bg-pink-100 text-pink-800",
-  paid: "bg-green-100 text-green-800",
-  declined: "bg-gray-100 text-gray-500",
-  cancelled: "bg-red-100 text-red-800",
-};
-
-const MARKET_BADGE_COLORS: Record<Market, string> = {
-  DAY: "bg-emerald-100 text-emerald-700",
-  ATL: "bg-violet-100 text-violet-700",
-};
-
-const JOB_TYPE_LABELS: Record<JobType, string> = Object.fromEntries(
-  SERVICES.map((s) => [s.id, `📦 ${s.label}`])
-) as Record<JobType, string>;
+import { HeaderStats } from "@/components/dispatch/HeaderStats";
+import { PingToggle } from "@/components/dispatch/PingToggle";
+import { PipelineTimeline } from "@/components/dispatch/PipelineTimeline";
+import { DriverMode } from "@/components/dispatch/DriverMode";
+import { JobCard } from "@/components/dispatch/JobCard";
+import { FlashConfetti } from "@/components/dispatch/FlashConfetti";
+import { AnimatePresence } from "framer-motion";
+import type { DispatchJob } from "@/types/dispatch";
 
 function todayRange(): { start: Timestamp; end: Timestamp } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const end = new Date(start.getTime() + 86_400_000);
-  return {
-    start: Timestamp.fromDate(start),
-    end: Timestamp.fromDate(end),
-  };
+  return { start: Timestamp.fromDate(start), end: Timestamp.fromDate(end) };
 }
 
 function isToday(t: Timestamp | null | undefined): boolean {
@@ -71,24 +29,44 @@ function isToday(t: Timestamp | null | undefined): boolean {
   return t.seconds >= start.seconds && t.seconds < end.seconds;
 }
 
-function formatPhone(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.length === 11 && d.startsWith("1")) return `+${d.slice(0, 1)} (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-  return phone;
-}
-
-function formatTime(t: Timestamp | null | undefined): string {
-  if (!t) return "";
-  return t.toDate().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 export default function DispatchPage() {
-  const { loading, ok, user } = useRequireAuth(["ceo"]);
+  const router = useRouter();
+  const { loading, ok, user, role } = useRequireAuth(["ceo"], { redirectTo: undefined });
   const [jobs, setJobs] = useState<DispatchJob[]>([]);
   const [quotingId, setQuotingId] = useState<string | null>(null);
   const [quotePrices, setQuotePrices] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [driverMode, setDriverMode] = useState(false);
+  const [confettiTrigger, setConfettiTrigger] = useState(false);
+  const [prevJobCount, setPrevJobCount] = useState(0);
+  const pingRef = useRef<{ chime: () => void }>({ chime: () => {} });
+
+  // Redirect wrong-role accounts
+  useEffect(() => {
+    if (!loading && user && role && role !== "ceo") {
+      router.replace("/");
+    }
+  }, [loading, user, role, router]);
+
+  // Render CEO sign-in when unauthenticated
+  if (loading) return <LoadingScreen />;
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-[#101613] flex flex-col items-center justify-center px-6">
+        <div className="text-center">
+          <div className="text-[48px] font-[800] font-bricolage text-[#0e9f6e] mb-4">gridd</div>
+          <h1 className="text-white text-[24px] font-bold mb-2">Owner sign-in</h1>
+          <p className="text-[#9db3a8] text-[14px] mb-6">Sign in to access the dispatch board</p>
+          <button
+            onClick={() => router.replace("/login?next=/dispatch")}
+            className="bg-[#0e9f6e] text-white font-bold text-[16px] px-8 py-3 rounded-full hover:bg-[#0a7a54] transition-colors cursor-pointer border-none"
+          >
+            Sign in
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   useEffect(() => {
     if (!ok || user?.uid !== CEO_UID) return;
@@ -100,17 +78,32 @@ export default function DispatchPage() {
         list.push({ id: d.id, ...data });
       });
       setJobs(list);
+      
+      // Chime on new request
+      const currentRequestCount = list.filter((j) => j.status === "request").length;
+      if (currentRequestCount > prevJobCount) {
+        pingRef.current?.chime();
+      }
+      setPrevJobCount(currentRequestCount);
     }, (err) => {
       console.error("dispatchJobs snapshot error:", err);
       setError("Failed to load jobs");
     });
     return unsub;
-  }, [ok, user?.uid]);
+  }, [ok, user?.uid, prevJobCount]);
 
   const newRequests = jobs.filter((j) => j.status === "request");
-  const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "in_progress", "proof"].includes(j.status));
+  const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status));
   const doneToday = jobs.filter((j) => j.status === "paid" && isToday(j.paidAt));
   const todayRevenue = doneToday.reduce((sum, j) => sum + (j.quoteAmount ?? 0), 0);
+  
+  // Calculate avg quote time (quotedAt - createdAt for today's paid jobs)
+  const quoteTimes = doneToday
+    .filter((j) => j.quotedAt && j.createdAt)
+    .map((j) => (j.quotedAt!.toMillis() - j.createdAt!.toMillis()));
+  const avgQuoteTime = quoteTimes.length > 0
+    ? quoteTimes.reduce((a, b) => a + b, 0) / quoteTimes.length
+    : null;
 
   const handleSendQuote = useCallback(async (jobId: string) => {
     const price = quotePrices[jobId]?.trim();
@@ -143,234 +136,151 @@ export default function DispatchPage() {
   }, [quotePrices, jobs]);
 
   const handleDecline = useCallback(async (jobId: string) => {
-    await updateDoc(doc(db, "dispatchJobs", jobId), {
-      status: "declined",
-    });
+    await updateDoc(doc(db, "dispatchJobs", jobId), { status: "declined" });
   }, []);
 
-  const handleAdvance = useCallback(async (jobId: string, nextStatus: JobStatus, extraFields?: Record<string, unknown>) => {
-    await updateDoc(doc(db, "dispatchJobs", jobId), {
-      status: nextStatus,
-      ...extraFields,
-    });
-  }, []);
-
-  const getAction = (job: DispatchJob): { label: string; handler: () => void; disabled?: boolean } | null => {
-    switch (job.status) {
-      case "accepted":
-      case "assigned":
-        return {
-          label: "▶ Start job",
-          handler: () => handleAdvance(job.id, "in_progress"),
-        };
-      case "in_progress":
-        return {
-          label: "✅ Mark done",
-          handler: () => handleAdvance(job.id, "proof", { completedAt: serverTimestamp() }),
-        };
-      case "proof":
-        return {
-          label: "💰 Mark paid",
-          handler: () => handleAdvance(job.id, "paid", { paidAt: serverTimestamp() }),
-        };
-      case "quoted":
-        return { label: "⏳ Waiting on customer YES", handler: () => {}, disabled: true };
-      default:
-        return null;
+  const handleAdvance = useCallback(async (jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
+    await updateDoc(doc(db, "dispatchJobs", jobId), { status: nextStatus, ...extraFields });
+    
+    // Trigger confetti on paid
+    if (nextStatus === "paid") {
+      setConfettiTrigger(true);
+      setTimeout(() => setConfettiTrigger(false), 100);
     }
-  };
+  }, []);
 
   if (loading || !ok) return <LoadingScreen />;
-
   if (user?.uid !== CEO_UID) {
-    return (
-      <div className="p-6 text-center text-red-600">
-        Unauthorized — CEO access only
-      </div>
-    );
+    router.replace("/");
+    return <LoadingScreen />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 pb-24">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dispatch Cockpit</h1>
-        <div className="flex gap-4 mt-2 text-sm text-gray-600">
-          <span>🆕 {newRequests.length} new</span>
-          <span>⚡ {active.length} active</span>
-          <span>✅ {doneToday.length} done today</span>
-          <span className="font-semibold text-green-700">💰 ${todayRevenue.toFixed(2)} rev</span>
+    <>
+      <div className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
+        {/* Header */}
+        <header className="sticky top-0 z-20 bg-[rgba(238,243,239,0.92)] backdrop-blur border-b border-[rgba(16,22,19,0.09)] px-[4vw] py-3 flex items-center justify-between gap-2.5 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">
+              gridd
+            </div>
+            <div className="flex items-center gap-1.5 bg-white border border-[rgba(16,22,19,0.09)] rounded-full px-3 py-1.5 text-[11.5px] font-extrabold">
+              <span className="w-2 h-2 rounded-full bg-[#0e9f6e] animate-pulse" />
+              <span>DISPATCH · {newRequests.length} waiting</span>
+            </div>
+            <PingToggle onPingRef={pingRef} />
+          </div>
+          <div className="flex items-center gap-3.5 flex-wrap">
+            <HeaderStats waitingCount={newRequests.length} todayRevenue={todayRevenue} avgQuoteTime={avgQuoteTime} />
+            <button
+              onClick={() => setDriverMode(!driverMode)}
+              className={`border-none font-inherit font-extrabold text-xs rounded-full px-4 py-2 cursor-pointer ${
+                driverMode ? "bg-[#0e9f6e] text-white" : "bg-[#101613] text-white"
+              }`}
+            >
+              {driverMode ? "📋 Dispatch" : "🚚 Drive"}
+            </button>
+          </div>
+        </header>
+
+        {error && (
+          <div className="mx-[4vw] mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
+        )}
+
+        {/* Board */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5 p-5 pb-32 max-w-[1400px] mx-auto">
+          {/* Column 1: New Requests */}
+          <Column title="New requests" count={newRequests.length} dotColor="bg-[#d9a441]">
+            <AnimatePresence>
+              {newRequests.length === 0 && <EmptyState message="No new requests." />}
+              {newRequests.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                />
+              ))}
+            </AnimatePresence>
+          </Column>
+
+          {/* Column 2: Active */}
+          <Column title="Active" count={active.length} dotColor="bg-[#0e9f6e]">
+            <AnimatePresence>
+              {active.length === 0 && <EmptyState message="Nothing in motion." />}
+              {active.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                />
+              ))}
+            </AnimatePresence>
+          </Column>
+
+          {/* Column 3: Done Today */}
+          <Column title="Done today" count={doneToday.length} dotColor="bg-[#101613]">
+            <AnimatePresence>
+              {doneToday.length === 0 && <EmptyState message="Nothing banked yet." />}
+              {doneToday.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                />
+              ))}
+            </AnimatePresence>
+          </Column>
         </div>
+
+        {/* Pipeline Timeline */}
+        <PipelineTimeline jobs={jobs} />
       </div>
 
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+      {/* Driver Mode Overlay */}
+      {driverMode && (
+        <DriverMode jobs={jobs} onAdvance={handleAdvance} onClose={() => setDriverMode(false)} />
       )}
 
-      {/* 3-column grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Column 1: New Requests */}
-        <Column title="🆕 New Requests" count={newRequests.length} color="border-yellow-400">
-          {newRequests.length === 0 && <EmptyState />}
-          {newRequests.map((job) => (
-            <JobCard key={job.id} job={job}>
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-500 text-sm">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1"
-                    placeholder="0.00"
-                    value={quotePrices[job.id] ?? ""}
-                    onChange={(e) =>
-                      setQuotePrices((prev) => ({ ...prev, [job.id]: e.target.value }))
-                    }
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleSendQuote(job.id)}
-                    disabled={quotingId === job.id || !quotePrices[job.id]?.trim()}
-                    className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {quotingId === job.id ? "Sending..." : "Send quote"}
-                  </button>
-                  <button
-                    onClick={() => handleDecline(job.id)}
-                    className="px-3 py-2 text-sm text-gray-500 hover:text-red-600 transition-colors"
-                  >
-                    Decline
-                  </button>
-                </div>
-              </div>
-            </JobCard>
-          ))}
-        </Column>
-
-        {/* Column 2: Active */}
-        <Column title="⚡ Active" count={active.length} color="border-blue-400">
-          {active.length === 0 && <EmptyState />}
-          {active.map((job) => {
-            const action = getAction(job);
-            return (
-              <JobCard key={job.id} job={job}>
-                <div className="mt-3 space-y-2">
-                  {job.quoteAmount != null && (
-                    <div className="text-lg font-bold text-gray-900">
-                      ${job.quoteAmount.toFixed(2)}
-                    </div>
-                  )}
-                  {action && (
-                    <button
-                      onClick={action.handler}
-                      disabled={action.disabled}
-                      className={`w-full rounded-lg py-2 text-sm font-medium transition-colors ${
-                        action.disabled
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                          : "bg-blue-600 text-white hover:bg-blue-700"
-                      }`}
-                    >
-                      {action.label}
-                    </button>
-                  )}
-                </div>
-              </JobCard>
-            );
-          })}
-        </Column>
-
-        {/* Column 3: Done Today */}
-        <Column title="✅ Done Today" count={doneToday.length} color="border-green-400">
-          {doneToday.length === 0 && <EmptyState />}
-          {doneToday.map((job) => (
-            <JobCard key={job.id} job={job}>
-              <div className="mt-3 space-y-1">
-                <div className="text-xl font-bold text-green-700">
-                  ${job.quoteAmount?.toFixed(2) ?? "0.00"}
-                </div>
-                <div className="text-xs text-gray-400">
-                  Paid {job.paidAt ? formatTime(job.paidAt) : ""}
-                </div>
-              </div>
-            </JobCard>
-          ))}
-        </Column>
-      </div>
-    </div>
+      {/* Flash + Confetti */}
+      <FlashConfetti trigger={confettiTrigger} />
+    </>
   );
 }
 
 /* ── Sub-components ── */
 
-function Column({
-  title,
-  count,
-  color,
-  children,
-}: {
-  title: string;
-  count: number;
-  color: string;
-  children: React.ReactNode;
-}) {
+function Column({ title, count, dotColor, children }: { title: string; count: number; dotColor: string; children: React.ReactNode }) {
   return (
-    <div className={`bg-white rounded-xl shadow-sm border-t-4 ${color} p-4`}>
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">
-        {title} <span className="text-gray-400 text-base font-normal">({count})</span>
-      </h2>
+    <div>
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+        <h2 className="text-[12.5px] font-extrabold tracking-widest uppercase text-[#5c6a62]">{title}</h2>
+        <span className="bg-white border border-[rgba(16,22,19,0.09)] rounded-full text-xs font-extrabold px-2.5 py-0.5">{count}</span>
+      </div>
       <div className="space-y-3">{children}</div>
     </div>
   );
 }
 
-function JobCard({ job, children }: { job: DispatchJob; children?: React.ReactNode }) {
+function EmptyState({ message }: { message: string }) {
   return (
-    <div className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="font-semibold text-gray-900 text-sm truncate">{job.customerName}</span>
-        <div className="flex gap-1 shrink-0">
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${MARKET_BADGE_COLORS[job.market]}`}>
-            {job.market}
-          </span>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_BADGE_COLORS[job.status]}`}>
-            {job.status}
-          </span>
-        </div>
-      </div>
-      <div className="text-xs text-gray-500 mb-1">
-        {JOB_TYPE_LABELS[job.jobType]}
-      </div>
-      <div className="text-xs text-gray-600 mb-1 truncate">
-        {job.pickupCity} → {job.dropoffCity}
-      </div>
-      <p className="text-sm text-gray-700 line-clamp-2 mb-2">
-        {job.description}
-      </p>
-      <div className="flex items-center justify-between text-xs">
-        <a
-          href={`tel:${job.customerPhone}`}
-          className="text-blue-600 hover:text-blue-800 font-medium"
-        >
-          {formatPhone(job.customerPhone)}
-        </a>
-        <span className="text-gray-400">
-          {job.createdAt ? formatTime(job.createdAt) : ""}
-        </span>
-      </div>
-      <div className="text-xs text-gray-400 mt-1">
-        via {job.source}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="text-center py-8 text-gray-400 text-sm">
-      Nothing here yet
+    <div className="border-2 border-dashed border-[rgba(16,22,19,0.14)] rounded-[18px] p-6 text-center text-[13px] text-[#5c6a62] font-semibold">
+      {message}
     </div>
   );
 }

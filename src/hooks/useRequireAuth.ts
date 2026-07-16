@@ -11,15 +11,16 @@ type Allowed = UserRole;
  * Waits for global auth, then ensures user exists and role is allowed; otherwise redirects.
  * Returns `ready` only when safe to render protected content (no flash of wrong role).
  */
-export function useRequireAuth(allowedRoles: Allowed[]) {
+export function useRequireAuth(allowedRoles: Allowed[], options?: { redirectTo?: string }) {
   const { user, profile, role, loading } = useAuth();
   const router = useRouter();
   const allowedKey = allowedRoles.join("|");
+  const { redirectTo } = options ?? {};
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      router.replace("/");
+      router.replace(redirectTo ?? "/");
       return;
     }
     if (!role) {
@@ -32,7 +33,7 @@ export function useRequireAuth(allowedRoles: Allowed[]) {
       else if (role === "ceo") router.replace("/admin/dashboard");
       else router.replace("/home");
     }
-  }, [loading, user, role, router, allowedKey]);
+  }, [loading, user, role, router, allowedKey, redirectTo]);
 
   const ok =
     !loading &&

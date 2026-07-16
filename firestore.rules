@@ -401,6 +401,12 @@ service cloud.firestore {
       allow write: if isCeoAdmin();
     }
 
+    /** Dispatch pricing — public read (client-side estimate), CEO write only. */
+    match /systemConfig/dispatchConfig {
+      allow read: if true;
+      allow write: if isCeoAdmin();
+    }
+
     /** Service packages / pricing tiers — public read for catalog, CEO writes. */
     match /packages/{pkgId} {
       allow read: if true;
@@ -457,7 +463,7 @@ service cloud.firestore {
      */
     /** GRIDD Dispatch Cockpit — CEO-only jobs board (separate collection from existing jobs) */
     match /dispatchJobs/{jobId} {
-      allow read, write: if request.auth.uid == "51hByax004NTrTblndZ4uRUhKhU2";
+      allow read, write: if request.auth != null && request.auth.uid == "51hByax004NTrTblndZ4uRUhKhU2";
       allow create: if true;
     }
 

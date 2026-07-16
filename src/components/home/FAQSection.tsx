@@ -21,6 +21,26 @@ const FAQS = [
     q: "A little outside the towns?",
     a: "Call us. Small mileage add, but we've done runs farther than you'd expect.",
   },
+  {
+    q: "Can I book online?",
+    a: "Yes — the form below takes 30 seconds. Or just text.",
+  },
+  {
+    q: "Do you take stuff upstairs?",
+    a: "One flight with a clear path, yes. More than that, text a photo first.",
+  },
+  {
+    q: "Do you assemble furniture?",
+    a: "No — we move it, we don't build it.",
+  },
+  {
+    q: "Cash okay?",
+    a: "Cash, card, or tap. Always after the job, never before.",
+  },
+  {
+    q: "Can you wait while I shop?",
+    a: "Yes — wait-time jobs are a normal errand run.",
+  },
 ];
 
 export default function FAQSection() {

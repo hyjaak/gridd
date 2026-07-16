@@ -206,3 +206,35 @@ body {
     opacity: 0.2;
   }
 }
+
+@keyframes qdrive {
+  from {
+    left: -32px;
+  }
+  to {
+    left: calc(100% + 12px);
+  }
+}
+
+/* Custom scrollbar for cockpit panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Mobile: no backdrop-filter on cards (performance) */
+@media (max-width: 760px) {
+  .card-blur {
+    backdrop-filter: none !important;
+    background: rgba(255, 255, 255, 0.97) !important;
+  }
+}

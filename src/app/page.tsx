@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { MarketKey } from "@/lib/constants";
-import { MARKETS, PHONE, PHONE_HREF } from "@/lib/constants";
+import { MARKETS, PHONE_HREF, SMS_HREF, EMAIL } from "@/lib/constants";
 import Scene3D from "@/components/home/Scene3D";
 import TopBar from "@/components/home/TopBar";
 import UtilityBar from "@/components/home/UtilityBar";
@@ -11,8 +11,13 @@ import ScrollSection from "@/components/home/ScrollSection";
 import LiveChip from "@/components/home/LiveChip";
 import DeliveredCard from "@/components/home/DeliveredCard";
 import Flash from "@/components/home/Flash";
+import QuoteModal from "@/components/home/QuoteModal";
 import BookingSection from "@/components/home/BookingSection";
 import FAQSection from "@/components/home/FAQSection";
+import AboutOwner from "@/components/home/AboutOwner";
+import AreaMap from "@/components/home/AreaMap";
+import StickyActions from "@/components/home/StickyActions";
+import HonestBadges from "@/components/home/HonestBadges";
 import { fireConfetti } from "@/components/home/confetti";
 
 export default function HomePage() {
@@ -20,6 +25,8 @@ export default function HomePage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [delivered, setDelivered] = useState(false);
   const [flashTrigger, setFlashTrigger] = useState(0);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [confettiFired, setConfettiFired] = useState(false);
 
   const handlePhoto = useCallback((dataUrl: string) => {
     setPhotoUrl(dataUrl);
@@ -28,10 +35,15 @@ export default function HomePage() {
 
   const handleDelivered = useCallback((d: boolean) => {
     setDelivered(d);
-    if (d) {
-      fireConfetti();
+    if (d && !confettiFired) {
+      setConfettiFired(true);
+      fireConfetti(36);
     }
-  }, []);
+    // Reset confetti flag when scrolling back (scene calls onDelivered(false) when t < 0.9)
+    if (!d && confettiFired) {
+      setConfettiFired(false);
+    }
+  }, [confettiFired]);
 
   const m = MARKETS[market];
 
@@ -51,7 +63,9 @@ export default function HomePage() {
       <RouteRail />
       <LiveChip market={market} />
       <Flash trigger={flashTrigger} />
-      <DeliveredCard show={delivered} photoUrl={photoUrl} />
+      <DeliveredCard show={delivered} photoUrl={photoUrl} onBook={() => setQuoteOpen(true)} />
+
+      <QuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} market={market} />
 
       <main className="relative z-10">
         {/* Hero */}
@@ -61,23 +75,39 @@ export default function HomePage() {
             One run.<br />Start to done.
           </h1>
           <p className="text-[16.5px] leading-relaxed text-[#5c6a62]">
-            <span>{m.city}'s</span> same-day van service — delivery, errands and light hauling with a flat price up front. Scroll to ride along on a job.
+            <span>{m.city}'s</span> same-day cargo-SUV service — delivery, errands and light hauling with a flat price up front. Scroll to ride along on a run.
           </p>
-          <a
-            href="#bookSec"
-            className="inline-block mt-6 bg-[#0e9f6e] text-white font-bold text-[16px] px-[30px] py-[15px] rounded-full no-underline shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] hover:-translate-y-[1px] transition-all"
+          <button
+            onClick={() => setQuoteOpen(true)}
+            className="inline-block mt-6 bg-[#0e9f6e] text-white font-bold text-[16px] px-[30px] py-[15px] rounded-full no-underline shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] hover:-translate-y-[1px] transition-all cursor-pointer border-none"
           >
             Get a flat price
-          </a>
+          </button>
           <div className="mt-6 text-[13px] text-[#5c6a62] flex items-center gap-2">
             <span className="w-5 h-8 border-2 border-[#5c6a62] rounded-[10px] relative flex-none">
               <span className="absolute left-1/2 top-[6px] w-[3px] h-[7px] rounded-sm bg-[#5c6a62] -translate-x-1/2 animate-[wheel_1.6s_infinite]" />
             </span>
-            Scroll — the van moves with you
+            Scroll — ride along on a run
+          </div>
+          {/* Hours line */}
+          <div className="mt-4 text-[12.5px] font-bold text-[#5c6a62] flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#0e9f6e]" />
+            Mon–Sat 8am–7pm · Same-day when you call before 2pm
+          </div>
+          {/* Trust chips */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {["Flat price locked", "Owner-operated", "Pay after it's done"].map((chip) => (
+              <span
+                key={chip}
+                className="text-[11.5px] font-bold bg-white border border-black/12 rounded-full px-3 py-1.5"
+              >
+                ✓ {chip}
+              </span>
+            ))}
           </div>
         </ScrollSection>
 
-        {/* Stop 1 */}
+        {/* Stop 1 — fit guide */}
         <ScrollSection align="right">
           <div className="stop">Stop 1 · The job</div>
           <h2 className="text-[clamp(30px,4vw,48px)] font-[800] font-bricolage tracking-tight leading-tight mb-3">
@@ -86,44 +116,70 @@ export default function HomePage() {
           <p className="text-[16.5px] leading-relaxed text-[#5c6a62]">
             A dresser off Marketplace. Paperwork across town. A couch to the curb. Text it, call it, or drop it in the form — 30 seconds, no app, no account.
           </p>
+          {/* Fit guide inline */}
+          <div className="mt-4 text-[12.5px] leading-relaxed text-[#5c6a62]">
+            <b className="text-[#0e9f6e] font-extrabold">Fits the SUV:</b> queen mattress (seats down) · dresser · loveseat · TV to 75" · 15+ boxes · marketplace & storage runs<br />
+            <span className="text-[#b91c1c] font-extrabold">Not us:</span> full sofas & sectionals · large appliances · full moves · pianos · two-person jobs
+          </div>
+          <div className="mt-3 text-[12px] font-bold text-[#101613] bg-[#eef3ef] border border-dashed border-black/18 rounded-xl px-3 py-2">
+            Not sure it fits? <a href={SMS_HREF} className="text-[#0e9f6e] no-underline font-extrabold">Text a photo of it</a> — instant answer.
+          </div>
         </ScrollSection>
 
-        {/* Stop 2 */}
+        {/* Stop 2 — pricing */}
         <ScrollSection>
           <div className="stop">Stop 2 · The price</div>
           <h2 className="text-[clamp(30px,4vw,48px)] font-[800] font-bricolage tracking-tight leading-tight mb-3">
             Flat number before we roll.
           </h2>
           <p className="text-[16.5px] leading-relaxed text-[#5c6a62]">
-            You get one price, in minutes. That's the price you pay — no hourly meter running while we drive.
+            You get one price, in minutes. That's the price you pay — no hourly meter running while we drive. Real examples:
           </p>
-          <ul className="list-none mt-[18px]">
+          <div className="mt-4 text-[13px]">
             {[
-              { label: "Same-day delivery", price: "from $45" },
-              { label: "Errand runs", price: "from $45" },
-              { label: "Light hauling", price: "from $75" },
+              { label: "Facebook Marketplace pickup", price: "$45–60" },
+              { label: "Store / warehouse pickup", price: "$55–75" },
+              { label: "Document or errand run", price: "$45" },
+              { label: "Loveseat / chair haul-away", price: "$75–95" },
+              { label: "Curbside junk load", price: "$75–110" },
             ].map((item) => (
-              <li
+              <div
                 key={item.label}
-                className="flex justify-between items-center py-3 border-b border-dashed border-black/15 font-semibold text-[15.5px]"
+                className="flex justify-between items-center py-2 border-b border-dashed border-black/12 font-semibold text-[#3d463f]"
               >
                 {item.label}
-                <b className="text-[#0e9f6e] text-[16.5px]">{item.price}</b>
-              </li>
+                <b className="text-[#101613]">{item.price}</b>
+              </div>
             ))}
-          </ul>
+          </div>
         </ScrollSection>
 
-        {/* Stop 3 */}
+        {/* Stop 3 — promise list */}
         <ScrollSection align="right">
           <div className="stop">Stop 3 · On the move</div>
           <h2 className="text-[clamp(30px,4vw,48px)] font-[800] font-bricolage tracking-tight leading-tight mb-3">
             You'll know the second it's rolling.
           </h2>
           <p className="text-[16.5px] leading-relaxed text-[#5c6a62]">
-            A text when your job is on the road, and the owner behind the wheel — not a stranger from a gig app. Same person who quoted it, doing it.
+            A text when your job is on the road, and the owner behind the wheel — not a stranger from a gig app.
           </p>
+          <ul className="list-none mt-[18px] space-y-2">
+            {[
+              "Text the second your job is rolling",
+              "Photo proof at the drop-off — sent to your phone",
+              "Pay AFTER it's done — card, tap, or cash",
+              "The person who quotes it is the person carrying it",
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-[13.5px] font-semibold text-[#3d463f]">
+                <span className="text-[#0e9f6e] font-bold flex-none mt-0.5">✓</span>
+                {item}
+              </li>
+            ))}
+          </ul>
         </ScrollSection>
+
+        {/* AboutOwner */}
+        <AboutOwner />
 
         {/* Delivered */}
         <ScrollSection>
@@ -148,12 +204,28 @@ export default function HomePage() {
               </span>
             ))}
           </div>
-          <a
-            href="#bookSec"
-            className="inline-block mt-6 bg-[#0e9f6e] text-white font-bold text-[16px] px-[30px] py-[15px] rounded-full no-underline shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] transition-all"
+          <p className="mt-3 text-[12px] text-[#5c6a62] font-semibold">
+            ≈ 25-mile service ring · a little outside? Call — usually a small mileage add.
+          </p>
+          {/* Owner card */}
+          <div className="mt-4 flex items-center gap-3 bg-[#f5faf7] border border-[#0e9f6e]/20 rounded-2xl px-4 py-3">
+            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#0e9f6e] to-[#0a7a54] flex-none flex items-center justify-center text-white text-lg border-2 border-white">
+              👨🏾
+            </div>
+            <div>
+              <b className="text-[13.5px] block text-[#101613]">Ibrahim — the owner</b>
+              <span className="text-[12px] text-[#5c6a62] font-semibold leading-relaxed">
+                I started GRIDD because {m.city} needed something simpler than truck rentals and gig apps. When you text GRIDD, you're talking to me — and I'm the one showing up.
+              </span>
+            </div>
+          </div>
+          <AreaMap market={market} />
+          <button
+            onClick={() => setQuoteOpen(true)}
+            className="inline-block mt-6 bg-[#0e9f6e] text-white font-bold text-[16px] px-[30px] py-[15px] rounded-full no-underline shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] transition-all cursor-pointer border-none"
           >
-            Book your run ↓
-          </a>
+            Book your run
+          </button>
         </ScrollSection>
 
         {/* FAQ */}
@@ -165,7 +237,7 @@ export default function HomePage() {
           <FAQSection />
         </ScrollSection>
 
-        {/* Booking */}
+        {/* Booking section */}
         <ScrollSection align="right" id="bookSec">
           <div className="stop">Your turn · The work we do</div>
           <h2 className="text-[clamp(30px,4vw,48px)] font-[800] font-bricolage tracking-tight leading-tight mb-3">
@@ -175,20 +247,47 @@ export default function HomePage() {
         </ScrollSection>
       </main>
 
+      {/* Honest badges */}
+      <HonestBadges />
+
       {/* Footer */}
-      <footer className="relative z-10 bg-[#101613] text-[#9db3a8] px-[7vw] py-9 flex justify-between flex-wrap gap-3 text-[14px]">
-        <div>
-          <div className="text-white text-[18px] font-[800] font-bricolage">gridd</div>
-          <div className="mt-1.5">GRIDD Technologies LLC · {m.city}, {m.state}</div>
-        </div>
-        <div className="self-center flex gap-4 items-center">
-          <a href="/privacy" className="text-[#9db3a8] hover:text-white transition-colors no-underline text-[13px]">Privacy</a>
-          <span aria-hidden="true">·</span>
-          <a href="/terms" className="text-[#9db3a8] hover:text-white transition-colors no-underline text-[13px]">Terms</a>
-          <span aria-hidden="true" className="hidden sm:inline">·</span>
-          <span className="hidden sm:inline">Owner-operated · Same-day when you call early</span>
+      <footer className="relative z-10 bg-[#101613] text-[#9db3a8] px-[7vw] py-9 text-[14px]">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+          <div>
+            <div className="text-white text-[18px] font-[800] font-bricolage">gridd</div>
+            <div className="mt-1.5 text-[13px]">GRIDD Technologies LLC · {m.city}, {m.state}</div>
+          </div>
+          <div>
+            <div className="text-white text-[13px] font-bold mb-1.5">Hours</div>
+            <div className="text-[13px]">Mon–Sat 8am–7pm</div>
+            <div className="text-[13px]">Same-day before 2pm</div>
+          </div>
+          <div>
+            <div className="text-white text-[13px] font-bold mb-1.5">Contact</div>
+            <a href={PHONE_HREF} className="text-[#9db3a8] hover:text-white transition-colors no-underline block text-[13px]">
+              (313) 825-9887
+            </a>
+            <a href={`mailto:${EMAIL}`} className="text-[#9db3a8] hover:text-white transition-colors no-underline block text-[13px] mt-0.5">
+              {EMAIL}
+            </a>
+          </div>
+          <div>
+            <div className="text-white text-[13px] font-bold mb-1.5">Legal</div>
+            <a href="/privacy" className="text-[#9db3a8] hover:text-white transition-colors no-underline block text-[13px]">
+              Privacy
+            </a>
+            <a href="/terms" className="text-[#9db3a8] hover:text-white transition-colors no-underline block text-[13px] mt-0.5">
+              Terms
+            </a>
+            <a href="/login?next=/dispatch" className="text-[#7a8a7f] hover:text-white transition-colors no-underline block text-[11px] mt-1">
+              Owner sign-in
+            </a>
+          </div>
         </div>
       </footer>
+
+      {/* StickyActions */}
+      <StickyActions onQuote={() => setQuoteOpen(true)} />
 
       <style jsx>{`
         .stop {
@@ -214,9 +313,6 @@ export default function HomePage() {
           0% { opacity: 1; top: 6px; }
           70% { opacity: 0; top: 16px; }
           100% { opacity: 0; }
-        }
-        @media (max-width: 760px) {
-          .rail .lab { display: none; }
         }
       `}</style>
     </div>
