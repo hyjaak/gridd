@@ -1,7 +1,5 @@
 "use client";
 
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { MARKETS } from "@/lib/constants";
 import type { MarketKey, ServiceId } from "@/lib/constants";
 
@@ -22,6 +20,8 @@ export type BookingPayload = {
   timeWindow?: string;
   itemPhotoUrl?: string;
   market: MarketKey;
+  estMiles?: number;
+  estPrice?: number;
 };
 
 export async function submitBooking(payload: BookingPayload) {
@@ -39,30 +39,36 @@ export async function submitBooking(payload: BookingPayload) {
     throw new Error("Please enter a drop-off address or city");
   }
 
-  await addDoc(collection(db, "dispatchJobs"), {
-    jobType: payload.jobType,
-    pickupAddress: {
-      street: payload.pickupAddress.street?.trim() || "",
-      city: payload.pickupAddress.city.trim(),
-      unit: payload.pickupAddress.unit?.trim() || "",
-      notes: payload.pickupAddress.notes?.trim() || "",
-    },
-    dropoffAddress: {
-      street: payload.dropoffAddress.street?.trim() || "",
-      city: payload.dropoffAddress.city.trim(),
-      unit: payload.dropoffAddress.unit?.trim() || "",
-      notes: payload.dropoffAddress.notes?.trim() || "",
-    },
-    customerPhone: normalized,
-    contactName: payload.contactName?.trim() || "",
-    description: payload.description.trim(),
-    timeWindow: payload.timeWindow || "",
-    itemPhotoUrl: payload.itemPhotoUrl || "",
-    status: "request",
-    source: "form",
-    market: MARKETS[payload.market].code,
-    assignedTo: "owner",
-    payoutPct: 0,
-    createdAt: serverTimestamp(),
+  const res = await fetch("/api/create-job", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jobType: payload.jobType,
+      pickupAddress: {
+        street: payload.pickupAddress.street?.trim() || "",
+        city: payload.pickupAddress.city.trim(),
+        unit: payload.pickupAddress.unit?.trim() || "",
+        notes: payload.pickupAddress.notes?.trim() || "",
+      },
+      dropoffAddress: {
+        street: payload.dropoffAddress.street?.trim() || "",
+        city: payload.dropoffAddress.city.trim(),
+        unit: payload.dropoffAddress.unit?.trim() || "",
+        notes: payload.dropoffAddress.notes?.trim() || "",
+      },
+      customerPhone: normalized,
+      contactName: payload.contactName?.trim() || "",
+      description: payload.description.trim(),
+      timeWindow: payload.timeWindow || "",
+      itemPhotoUrl: payload.itemPhotoUrl || "",
+      market: MARKETS[payload.market].code,
+      estMiles: payload.estMiles,
+      estPrice: payload.estPrice,
+    }),
   });
+
+  const data = await res.json();
+  if (!data.ok) {
+    throw new Error(data.error || "Failed to create job");
+  }
 }

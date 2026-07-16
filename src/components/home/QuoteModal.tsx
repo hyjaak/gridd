@@ -104,6 +104,8 @@ export default function QuoteModal({ open, onClose, market }: Props) {
         timeWindow,
         itemPhotoUrl,
         market,
+        estMiles: undefined,
+        estPrice: undefined,
       });
       setDone(true);
       fireConfetti(24);

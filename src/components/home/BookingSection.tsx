@@ -95,6 +95,8 @@ export default function BookingSection({ market }: Props) {
         timeWindow,
         itemPhotoUrl,
         market,
+        estMiles: estPrice?.miles,
+        estPrice: estPrice?.price,
       });
       setDone(true);
     } catch (err) {
@@ -184,9 +186,14 @@ export default function BookingSection({ market }: Props) {
           />
         </div>
         {/* Estimate line */}
-        {estPrice && (
+        {estPrice && estPrice.miles <= 60 && (
           <div className="text-[12.5px] text-[#0e9f6e] font-bold text-center -mt-1 mb-2 bg-[#f2faf6] border border-[#0e9f6e]/20 rounded-xl px-3 py-2">
             Estimated flat price: ~${estPrice.price} · {estPrice.miles} miles — final number confirmed by text.
+          </div>
+        )}
+        {estPrice && estPrice.miles > 60 && (
+          <div className="text-[12.5px] text-[#5c6a62] font-bold text-center -mt-1 mb-2 bg-[#f2faf6] border border-[#0e9f6e]/20 rounded-xl px-3 py-2">
+            Long run — we'll confirm your flat price by text.
           </div>
         )}
         <input

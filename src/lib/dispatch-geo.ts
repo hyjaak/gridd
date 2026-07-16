@@ -21,7 +21,8 @@ export async function searchAddress(
   if (trimmed.length < 3) return [];
 
   const center = MARKET_CENTERS[market];
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(trimmed)}&limit=5&lat=${center.lat}&lon=${center.lng}`;
+  const stateSuffix = market === "OH" ? ", OH" : ", GA";
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(trimmed + stateSuffix)}&limit=5&lat=${center.lat}&lon=${center.lng}`;
 
   try {
     const ctrl = new AbortController();
@@ -35,7 +36,13 @@ export async function searchAddress(
     if (!data.features || !Array.isArray(data.features)) return [];
 
     return data.features
-      .filter((f: any) => f.geometry?.coordinates)
+      .filter((f: any) => {
+        if (!f.geometry?.coordinates) return false;
+        const [lng, lat] = f.geometry.coordinates;
+        // Reject results outside 60-mile radius of market center
+        const distMiles = haversineMiles(center, { lat, lng });
+        return distMiles <= 60;
+      })
       .map((f: any) => {
         const [lng, lat] = f.geometry.coordinates;
         const label = f.properties.name
