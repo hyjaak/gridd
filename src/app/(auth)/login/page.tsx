@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { logIn, googleSignIn } from "@/lib/auth";
+
+function isMobile(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 820px)").matches || "ontouchstart" in window;
+}
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -13,6 +20,32 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const next = searchParams.get("next");
+
+  // Handle redirect result on mount (mobile flow)
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result) return;
+        // Google sign-in succeeded via redirect
+        try {
+          await googleSignIn();
+          // If we get here, user was already signed in — redirect
+          window.location.assign(next || "/dispatch");
+        } catch (err: any) {
+          if (err.name === "GoogleNeedsRoleChoice") {
+            setError(err.message);
+            return;
+          }
+          setError(err.message || "Google sign-in failed");
+        }
+      })
+      .catch((err) => {
+        // Ignore if no redirect result
+        if (err.code !== "auth/no-redirect-operation") {
+          console.error("getRedirectResult error:", err);
+        }
+      });
+  }, [next]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,14 +64,20 @@ export default function LoginPage() {
     setError("");
     setGoogleLoading(true);
     try {
-      await googleSignIn();
-      // googleSignIn handles redirect — if we get here, the user was
-      // already signed in and finalizeGoogleSignIn redirected them.
-      // But if they're a new user, GoogleNeedsRoleChoiceError is thrown.
-      // We catch that below.
+      if (isMobile()) {
+        // Mobile: use redirect
+        const provider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, provider);
+        // Page will redirect — this line won't execute
+      } else {
+        // Desktop: use popup
+        await googleSignIn();
+        // googleSignIn handles redirect — if we get here, user was already signed in
+        // and finalizeGoogleSignIn redirected them.
+        // But if they're a new user, GoogleNeedsRoleChoiceError is thrown.
+      }
     } catch (err) {
       if (err instanceof Error) {
-        // GoogleNeedsRoleChoiceError means they need to pick role elsewhere
         setError(err.message);
       } else {
         setError("Google sign-in failed");

@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useCallback } from "react";
+import { clsx } from "clsx";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STAGES = ["REQUEST", "QUOTED", "BOOKED", "PICKUP", "EN ROUTE", "PHOTO", "PAID"] as const;
@@ -20,12 +21,31 @@ const STATUS_TO_STAGE: Record<string, number> = {
   paid: 6,
 };
 
+// BIZ phones (same as JobCard)
+const BIZ_PHONES = ["+14047834836", "+16783458153"];
+function isBIZ(phone: string): boolean {
+  return BIZ_PHONES.includes(phone);
+}
+
 export function PipelineTimeline({ jobs }: PipelineTimelineProps) {
   const activeJobs = jobs.filter((j) => j.status !== "paid");
 
+  const handleDotClick = useCallback((jobId: string) => {
+    const el = document.getElementById(`job-${jobId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Flash highlight
+      el.style.transition = "box-shadow 0.3s ease";
+      el.style.boxShadow = "0 0 0 3px #0e9f6e";
+      setTimeout(() => {
+        el.style.boxShadow = "";
+      }, 1500);
+    }
+  }, []);
+
   return (
-    <div className="fixed bottom-13 left-0 right-0 z-25 bg-white/94 backdrop-blur border-t border-[rgba(16,22,19,0.09)] px-[4vw] py-3">
-      <div className="relative h-8.5">
+    <div className="fixed bottom-0 left-0 right-0 z-25 bg-white/94 backdrop-blur border-t border-[rgba(16,22,19,0.09)] px-[4vw] py-3">
+      <div className="relative h-8">
         <div className="absolute top-5.5 left-0 right-0 h-0.5 bg-[rgba(16,22,19,0.12)]" />
         
         {STAGES.map((stage, i) => {
@@ -49,10 +69,15 @@ export function PipelineTimeline({ jobs }: PipelineTimelineProps) {
         {activeJobs.map((job) => {
           const stageIndex = STATUS_TO_STAGE[job.status];
           const left = `${4 + (stageIndex * 92 / 6)}%`;
+          const biz = job.customerPhone ? isBIZ(job.customerPhone) : false;
           return (
-            <span
+            <button
               key={job.id}
-              className="absolute top-3.5 w-4 h-4 rounded-full bg-[#0e9f6e] border-3 border-white shadow-[0_3px_10px_rgba(14,159,110,0.45)] -translate-x-1/2 transition-all duration-700 ease-out"
+              onClick={() => handleDotClick(job.id)}
+              className={clsx(
+                "absolute top-3.5 w-4 h-4 rounded-full border-3 border-white shadow-[0_3px_10px_rgba(14,159,110,0.45)] -translate-x-1/2 transition-all duration-700 ease-out cursor-pointer",
+                biz ? "bg-[#d9a441]" : "bg-[#0e9f6e]"
+              )}
               style={{ left }}
               title={job.contactName || "Unknown"}
             />

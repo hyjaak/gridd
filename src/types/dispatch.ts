@@ -21,6 +21,10 @@ export type DispatchJob = {
   timeWindow?: string;
   itemPhotoUrl?: string;
   quoteAmount?: number;
+  estMiles?: number;
+  estPrice?: number;
+  proofPhotoUrl?: string;
+  paymentMethod?: string;
   createdAt?: any;
   quotedAt?: any;
   paidAt?: any;

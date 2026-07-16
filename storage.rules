@@ -1,6 +1,11 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    match /proof/{jobId} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.auth.uid == "5FKp2Fpn7PSHqBf9tRyiO8fGD3n2";
+    }
     match /drivers/{driverId}/{allPaths=**} {
       allow read, write: if request.auth != null;
     }

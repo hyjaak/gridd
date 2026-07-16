@@ -29,6 +29,39 @@ function isToday(t: Timestamp | null | undefined): boolean {
   return t.seconds >= start.seconds && t.seconds < end.seconds;
 }
 
+// BIZ phone list
+const BIZ_PHONES = ["+14047834836", "+16783458153"];
+function isBIZ(phone: string): boolean {
+  return BIZ_PHONES.includes(phone);
+}
+
+// Sort helper: BIZ jobs float to top
+function sortByBIZ(jobs: DispatchJob[]): DispatchJob[] {
+  return [...jobs].sort((a, b) => {
+    const aBiz = a.customerPhone ? isBIZ(a.customerPhone) : false;
+    const bBiz = b.customerPhone ? isBIZ(b.customerPhone) : false;
+    if (aBiz && !bBiz) return -1;
+    if (!aBiz && bBiz) return 1;
+    return 0;
+  });
+}
+
+// Toast component
+function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#101613] text-white px-5 py-3 rounded-full shadow-lg text-sm font-semibold animate-[fadeIn_0.3s_ease]">
+      {message}
+      <button onClick={onDismiss} className="ml-3 text-[#8fa096] hover:text-white">✕</button>
+      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+    </div>
+  );
+}
+
 export default function DispatchPage() {
   const router = useRouter();
   const { loading, ok, user, role } = useRequireAuth(["ceo"], { redirectTo: undefined });
@@ -39,7 +72,22 @@ export default function DispatchPage() {
   const [driverMode, setDriverMode] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [prevJobCount, setPrevJobCount] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
   const pingRef = useRef<{ chime: () => void }>({ chime: () => {} });
+  const jobsRef = useRef<DispatchJob[]>([]);
+
+  // Track online/offline
+  useEffect(() => {
+    const onOff = () => setOffline(!navigator.onLine);
+    window.addEventListener("online", onOff);
+    window.addEventListener("offline", onOff);
+    setOffline(!navigator.onLine);
+    return () => {
+      window.removeEventListener("online", onOff);
+      window.removeEventListener("offline", onOff);
+    };
+  }, []);
 
   // Redirect wrong-role accounts
   useEffect(() => {
@@ -77,6 +125,7 @@ export default function DispatchPage() {
         const data = d.data() as Omit<DispatchJob, "id">;
         list.push({ id: d.id, ...data });
       });
+      jobsRef.current = list;
       setJobs(list);
       
       // Chime on new request
@@ -87,23 +136,45 @@ export default function DispatchPage() {
       setPrevJobCount(currentRequestCount);
     }, (err) => {
       console.error("dispatchJobs snapshot error:", err);
-      setError("Failed to load jobs");
+      setError("Failed to load jobs — check connection");
+      setOffline(true);
     });
     return unsub;
   }, [ok, user?.uid, prevJobCount]);
 
-  const newRequests = jobs.filter((j) => j.status === "request");
-  const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status));
-  const doneToday = jobs.filter((j) => j.status === "paid" && isToday(j.paidAt));
-  const todayRevenue = doneToday.reduce((sum, j) => sum + (j.quoteAmount ?? 0), 0);
-  
-  // Calculate avg quote time (quotedAt - createdAt for today's paid jobs)
-  const quoteTimes = doneToday
-    .filter((j) => j.quotedAt && j.createdAt)
-    .map((j) => (j.quotedAt!.toMillis() - j.createdAt!.toMillis()));
-  const avgQuoteTime = quoteTimes.length > 0
-    ? quoteTimes.reduce((a, b) => a + b, 0) / quoteTimes.length
-    : null;
+  // Optimistic UI helper
+  const optimisticAdvance = useCallback((jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
+    setJobs((prev) => prev.map((j) => {
+      if (j.id !== jobId) return j;
+      return { ...j, status: nextStatus as any, ...extraFields };
+    }));
+  }, []);
+
+  const rollbackJobs = useCallback(() => {
+    setJobs(jobsRef.current);
+  }, []);
+
+  const handleAdvance = useCallback(async (jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
+    // Optimistic update
+    optimisticAdvance(jobId, nextStatus, extraFields);
+    
+    try {
+      await updateDoc(doc(db, "dispatchJobs", jobId), { 
+        status: nextStatus, 
+        ...extraFields,
+      });
+      
+      // Trigger confetti on paid
+      if (nextStatus === "paid") {
+        setConfettiTrigger(true);
+        setTimeout(() => setConfettiTrigger(false), 100);
+      }
+    } catch (e) {
+      // Rollback on failure
+      rollbackJobs();
+      setToast(e instanceof Error ? e.message : "Failed to update");
+    }
+  }, [optimisticAdvance, rollbackJobs]);
 
   const handleSendQuote = useCallback(async (jobId: string) => {
     const price = quotePrices[jobId]?.trim();
@@ -112,6 +183,10 @@ export default function DispatchPage() {
     if (!job) return;
     setQuotingId(jobId);
     setError(null);
+    
+    // Optimistic
+    optimisticAdvance(jobId, "quoted", { quoteAmount: Number(price), quotedAt: new Date().toISOString() });
+    
     try {
       const res = await fetch("/api/send-quote", {
         method: "POST",
@@ -129,25 +204,39 @@ export default function DispatchPage() {
       });
       setQuotePrices((prev) => ({ ...prev, [jobId]: "" }));
     } catch (e) {
+      rollbackJobs();
       setError(e instanceof Error ? e.message : "Failed to send quote");
     } finally {
       setQuotingId(null);
     }
-  }, [quotePrices, jobs]);
+  }, [quotePrices, jobs, optimisticAdvance, rollbackJobs]);
 
   const handleDecline = useCallback(async (jobId: string) => {
-    await updateDoc(doc(db, "dispatchJobs", jobId), { status: "declined" });
-  }, []);
-
-  const handleAdvance = useCallback(async (jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
-    await updateDoc(doc(db, "dispatchJobs", jobId), { status: nextStatus, ...extraFields });
-    
-    // Trigger confetti on paid
-    if (nextStatus === "paid") {
-      setConfettiTrigger(true);
-      setTimeout(() => setConfettiTrigger(false), 100);
+    optimisticAdvance(jobId, "declined");
+    try {
+      await updateDoc(doc(db, "dispatchJobs", jobId), { status: "declined" });
+    } catch {
+      rollbackJobs();
+      setToast("Failed to decline");
     }
-  }, []);
+  }, [optimisticAdvance, rollbackJobs]);
+
+  // Assigned is treated same as accepted
+  const newRequests = sortByBIZ(jobs.filter((j) => j.status === "request"));
+  const active = sortByBIZ(jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status)));
+  const doneToday = jobs.filter((j) => j.status === "paid" && isToday(j.paidAt));
+  
+  const todayRevenue = doneToday.reduce((sum, j) => sum + (j.quoteAmount ?? 0), 0);
+  const runsCount = doneToday.length;
+  const openCount = jobs.filter((j) => ["request", "quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status)).length;
+  
+  // Calculate avg quote time (quotedAt - createdAt for today's jobs)
+  const quoteTimes = doneToday
+    .filter((j) => j.quotedAt && j.createdAt)
+    .map((j) => (j.quotedAt!.toMillis() - j.createdAt!.toMillis()));
+  const avgQuoteTime = quoteTimes.length > 0
+    ? quoteTimes.reduce((a, b) => a + b, 0) / quoteTimes.length
+    : null;
 
   if (loading || !ok) return <LoadingScreen />;
   if (user?.uid !== CEO_UID) {
@@ -158,6 +247,13 @@ export default function DispatchPage() {
   return (
     <>
       <div className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
+        {/* Offline strip */}
+        {offline && (
+          <div className="bg-[#d9a441] text-[#101613] text-center text-xs font-extrabold py-1.5 tracking-wider">
+            ⚠ RECONNECTING… CACHED DATA
+          </div>
+        )}
+
         {/* Header */}
         <header className="sticky top-0 z-20 bg-[rgba(238,243,239,0.92)] backdrop-blur border-b border-[rgba(16,22,19,0.09)] px-[4vw] py-3 flex items-center justify-between gap-2.5 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
@@ -171,7 +267,12 @@ export default function DispatchPage() {
             <PingToggle onPingRef={pingRef} />
           </div>
           <div className="flex items-center gap-3.5 flex-wrap">
-            <HeaderStats waitingCount={newRequests.length} todayRevenue={todayRevenue} avgQuoteTime={avgQuoteTime} />
+            <HeaderStats
+              todayRevenue={todayRevenue}
+              runsCount={runsCount}
+              avgQuoteTime={avgQuoteTime}
+              openCount={openCount}
+            />
             <button
               onClick={() => setDriverMode(!driverMode)}
               className={`border-none font-inherit font-extrabold text-xs rounded-full px-4 py-2 cursor-pointer ${
@@ -194,16 +295,18 @@ export default function DispatchPage() {
             <AnimatePresence>
               {newRequests.length === 0 && <EmptyState message="No new requests." />}
               {newRequests.map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  quotePrice={quotePrices[job.id] ?? ""}
-                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                  onSendQuote={handleSendQuote}
-                  onDecline={handleDecline}
-                  onAdvance={handleAdvance}
-                  quotingId={quotingId}
-                />
+                <div key={job.id} id={`job-${job.id}`}>
+                  <JobCard
+                    job={job}
+                    quotePrice={quotePrices[job.id] ?? ""}
+                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                    onSendQuote={handleSendQuote}
+                    onDecline={handleDecline}
+                    onAdvance={handleAdvance}
+                    quotingId={quotingId}
+                    onToast={setToast}
+                  />
+                </div>
               ))}
             </AnimatePresence>
           </Column>
@@ -213,16 +316,18 @@ export default function DispatchPage() {
             <AnimatePresence>
               {active.length === 0 && <EmptyState message="Nothing in motion." />}
               {active.map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  quotePrice={quotePrices[job.id] ?? ""}
-                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                  onSendQuote={handleSendQuote}
-                  onDecline={handleDecline}
-                  onAdvance={handleAdvance}
-                  quotingId={quotingId}
-                />
+                <div key={job.id} id={`job-${job.id}`}>
+                  <JobCard
+                    job={job}
+                    quotePrice={quotePrices[job.id] ?? ""}
+                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                    onSendQuote={handleSendQuote}
+                    onDecline={handleDecline}
+                    onAdvance={handleAdvance}
+                    quotingId={quotingId}
+                    onToast={setToast}
+                  />
+                </div>
               ))}
             </AnimatePresence>
           </Column>
@@ -232,16 +337,18 @@ export default function DispatchPage() {
             <AnimatePresence>
               {doneToday.length === 0 && <EmptyState message="Nothing banked yet." />}
               {doneToday.map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  quotePrice={quotePrices[job.id] ?? ""}
-                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                  onSendQuote={handleSendQuote}
-                  onDecline={handleDecline}
-                  onAdvance={handleAdvance}
-                  quotingId={quotingId}
-                />
+                <div key={job.id} id={`job-${job.id}`}>
+                  <JobCard
+                    job={job}
+                    quotePrice={quotePrices[job.id] ?? ""}
+                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                    onSendQuote={handleSendQuote}
+                    onDecline={handleDecline}
+                    onAdvance={handleAdvance}
+                    quotingId={quotingId}
+                    onToast={setToast}
+                  />
+                </div>
               ))}
             </AnimatePresence>
           </Column>
@@ -251,9 +358,12 @@ export default function DispatchPage() {
         <PipelineTimeline jobs={jobs} />
       </div>
 
+      {/* Toast */}
+      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+
       {/* Driver Mode Overlay */}
       {driverMode && (
-        <DriverMode jobs={jobs} onAdvance={handleAdvance} onClose={() => setDriverMode(false)} />
+        <DriverMode jobs={jobs} onAdvance={handleAdvance} onClose={() => setDriverMode(false)} onToast={setToast} />
       )}
 
       {/* Flash + Confetti */}
