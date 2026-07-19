@@ -14,7 +14,6 @@ import { DriverMode } from "@/components/dispatch/DriverMode";
 import { JobCard } from "@/components/dispatch/JobCard";
 import { FlashConfetti } from "@/components/dispatch/FlashConfetti";
 import { DispatchErrorBoundary } from "@/components/dispatch/DispatchErrorBoundary";
-import { AnimatePresence } from "framer-motion";
 import type { DispatchJob } from "@/types/dispatch";
 
 function todayRange(): { start: Timestamp; end: Timestamp } {
@@ -72,11 +71,11 @@ export default function DispatchPage() {
   const [error, setError] = useState<string | null>(null);
   const [driverMode, setDriverMode] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
-  const [prevJobCount, setPrevJobCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const pingRef = useRef<{ chime: () => void }>({ chime: () => {} });
   const jobsRef = useRef<DispatchJob[]>([]);
+  const prevRequestCountRef = useRef(0);
 
   // Track online/offline
   useEffect(() => {
@@ -129,19 +128,19 @@ export default function DispatchPage() {
       jobsRef.current = list;
       setJobs(list);
       
-      // Chime on new request
+      // Chime on new request — use ref to avoid infinite loop
       const currentRequestCount = list.filter((j) => j.status === "request").length;
-      if (currentRequestCount > prevJobCount) {
+      if (currentRequestCount > prevRequestCountRef.current) {
         pingRef.current?.chime();
       }
-      setPrevJobCount(currentRequestCount);
+      prevRequestCountRef.current = currentRequestCount;
     }, (err) => {
       console.error("dispatchJobs snapshot error:", err);
       setError("Failed to load jobs — check connection");
       setOffline(true);
     });
     return unsub;
-  }, [ok, user?.uid, prevJobCount]);
+  }, [ok, user?.uid]);
 
   // Optimistic UI helper
   const optimisticAdvance = useCallback((jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
@@ -293,65 +292,59 @@ export default function DispatchPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5 p-5 pb-32 max-w-[1400px] mx-auto">
           {/* Column 1: New Requests */}
           <Column title="New requests" count={newRequests.length} dotColor="bg-[#d9a441]">
-            <AnimatePresence>
-              {newRequests.length === 0 && <EmptyState message="No new requests." />}
-              {newRequests.map((job) => (
-                <div key={job.id} id={`job-${job.id}`}>
-                  <JobCard
-                    job={job}
-                    quotePrice={quotePrices[job.id] ?? ""}
-                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                    onSendQuote={handleSendQuote}
-                    onDecline={handleDecline}
-                    onAdvance={handleAdvance}
-                    quotingId={quotingId}
-                    onToast={setToast}
-                  />
-                </div>
-              ))}
-            </AnimatePresence>
+            {newRequests.length === 0 && <EmptyState message="No new requests." />}
+            {newRequests.map((job) => (
+              <div key={job.id} id={`job-${job.id}`}>
+                <JobCard
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                  onToast={setToast}
+                />
+              </div>
+            ))}
           </Column>
 
           {/* Column 2: Active */}
           <Column title="Active" count={active.length} dotColor="bg-[#0e9f6e]">
-            <AnimatePresence>
-              {active.length === 0 && <EmptyState message="Nothing in motion." />}
-              {active.map((job) => (
-                <div key={job.id} id={`job-${job.id}`}>
-                  <JobCard
-                    job={job}
-                    quotePrice={quotePrices[job.id] ?? ""}
-                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                    onSendQuote={handleSendQuote}
-                    onDecline={handleDecline}
-                    onAdvance={handleAdvance}
-                    quotingId={quotingId}
-                    onToast={setToast}
-                  />
-                </div>
-              ))}
-            </AnimatePresence>
+            {active.length === 0 && <EmptyState message="Nothing in motion." />}
+            {active.map((job) => (
+              <div key={job.id} id={`job-${job.id}`}>
+                <JobCard
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                  onToast={setToast}
+                />
+              </div>
+            ))}
           </Column>
 
           {/* Column 3: Done Today */}
           <Column title="Done today" count={doneToday.length} dotColor="bg-[#101613]">
-            <AnimatePresence>
-              {doneToday.length === 0 && <EmptyState message="Nothing banked yet." />}
-              {doneToday.map((job) => (
-                <div key={job.id} id={`job-${job.id}`}>
-                  <JobCard
-                    job={job}
-                    quotePrice={quotePrices[job.id] ?? ""}
-                    onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
-                    onSendQuote={handleSendQuote}
-                    onDecline={handleDecline}
-                    onAdvance={handleAdvance}
-                    quotingId={quotingId}
-                    onToast={setToast}
-                  />
-                </div>
-              ))}
-            </AnimatePresence>
+            {doneToday.length === 0 && <EmptyState message="Nothing banked yet." />}
+            {doneToday.map((job) => (
+              <div key={job.id} id={`job-${job.id}`}>
+                <JobCard
+                  job={job}
+                  quotePrice={quotePrices[job.id] ?? ""}
+                  onQuoteChange={(id, val) => setQuotePrices((prev) => ({ ...prev, [id]: val }))}
+                  onSendQuote={handleSendQuote}
+                  onDecline={handleDecline}
+                  onAdvance={handleAdvance}
+                  quotingId={quotingId}
+                  onToast={setToast}
+                />
+              </div>
+            ))}
           </Column>
         </div>
 

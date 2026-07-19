@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
@@ -81,17 +80,10 @@ export function JobCard({ job, quotePrice, onQuoteChange, onSendQuote, onDecline
   };
 
   return (
-    <motion.div
-      layout
-      initial={{ y: -14, scale: 0.97, opacity: 0 }}
-      animate={{ y: 0, scale: 1, opacity: 1 }}
-      exit={{ x: 28, scale: 0.95, opacity: 0 }}
-      transition={{ duration: 0.45, ease: [0.2, 0.9, 0.25, 1.1] }}
-      className={clsx(
+    <div className={clsx(
         "bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px_15px_13px] mb-3 shadow-[0_10px_30px_rgba(16,22,19,0.06)]",
         biz && "border-[#d9a441] shadow-[0_4px_18px_rgba(217,164,65,0.2)]"
-      )}
-    >
+      )}>
       {/* Header */}
       <div className="flex justify-between items-center gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -213,6 +205,6 @@ export function JobCard({ job, quotePrice, onQuoteChange, onSendQuote, onDecline
           </div>
         </>
       )}
-    </motion.div>
+    </div>
   );
 }
