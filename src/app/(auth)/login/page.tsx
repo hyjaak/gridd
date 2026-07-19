@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { GoogleAuthProvider, getRedirectResult, signInWithPopup, signInWithRedirect } from "firebase/auth";
+import { GoogleAuthProvider, getRedirectResult, signInWithRedirect } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { logIn, googleSignIn } from "@/lib/auth";
 
@@ -26,12 +26,12 @@ export default function LoginPage() {
     getRedirectResult(auth)
       .then(async (result) => {
         if (!result) return;
-        // Google sign-in succeeded via redirect
+        console.log("[login] getRedirectResult succeeded for", result.user?.email);
         try {
           await googleSignIn();
-          // If we get here, user was already signed in — redirect
           window.location.assign(next || "/dispatch");
         } catch (err: any) {
+          console.error("[login] getRedirectResult googleSignIn error:", err);
           if (err.name === "GoogleNeedsRoleChoice") {
             setError(err.message);
             return;
@@ -40,9 +40,10 @@ export default function LoginPage() {
         }
       })
       .catch((err) => {
-        // Ignore if no redirect result
+        // Log all redirect errors visibly
+        console.error("[login] getRedirectResult error:", err.code, err.message);
         if (err.code !== "auth/no-redirect-operation") {
-          console.error("getRedirectResult error:", err);
+          setError(`Redirect sign-in error: ${err.message || err.code}`);
         }
       });
   }, [next]);
@@ -54,7 +55,9 @@ export default function LoginPage() {
     try {
       await logIn(email, password, next ?? undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      const msg = err instanceof Error ? err.message : "Sign-in failed";
+      console.error("[login] email sign-in error:", msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -65,23 +68,18 @@ export default function LoginPage() {
     setGoogleLoading(true);
     try {
       if (isMobile()) {
-        // Mobile: use redirect
+        console.log("[login] mobile detected — using signInWithRedirect");
         const provider = new GoogleAuthProvider();
         await signInWithRedirect(auth, provider);
         // Page will redirect — this line won't execute
       } else {
-        // Desktop: use popup
+        console.log("[login] desktop detected — using signInWithPopup");
         await googleSignIn();
-        // googleSignIn handles redirect — if we get here, user was already signed in
-        // and finalizeGoogleSignIn redirected them.
-        // But if they're a new user, GoogleNeedsRoleChoiceError is thrown.
       }
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("Google sign-in failed");
-      }
+      const msg = err instanceof Error ? err.message : "Google sign-in failed";
+      console.error("[login] Google sign-in error:", msg);
+      setError(msg);
     } finally {
       setGoogleLoading(false);
     }
@@ -113,10 +111,17 @@ export default function LoginPage() {
           </span>
         </button>
 
-        {/* Divider */}
+        {/* Error display — always visible when set */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-[13px] text-center">
+            {error}
+          </div>
+        )}
+
+        {/* Divider — always visible */}
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px bg-[#2a2a2a]" />
-          <span className="text-[#5c6a62] text-[12px] font-medium">OR</span>
+          <span className="text-[#5c6a62] text-[12px] font-medium">Or sign in with email</span>
           <div className="flex-1 h-px bg-[#2a2a2a]" />
         </div>
 
@@ -137,7 +142,6 @@ export default function LoginPage() {
             required
             className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-4 py-3 text-white text-[14px] focus:outline-none focus:border-[#0e9f6e]"
           />
-          {error && <p className="text-red-400 text-[13px] text-center">{error}</p>}
           <button
             type="submit"
             disabled={loading}

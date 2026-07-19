@@ -75,14 +75,15 @@ export function DriverMode({ jobs, onAdvance, onClose, onToast }: DriverModeProp
     let released = false;
     const acquireWakeLock = async () => {
       try {
-        if ("wakeLock" in navigator) {
+        // Safari doesn't support wakeLock API - skip silently
+        if (typeof navigator !== "undefined" && "wakeLock" in navigator) {
           const wl = await (navigator as any).wakeLock.request("screen");
           wakeLockRef.current = wl;
           wl.addEventListener("release", () => {
             if (!released) acquireWakeLock();
           });
         }
-      } catch { /* silent */ }
+      } catch { /* silent - wakeLock not supported or denied */ }
     };
     acquireWakeLock();
     return () => {

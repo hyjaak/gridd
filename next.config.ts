@@ -13,7 +13,18 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    return [{ source: "/jobs", destination: "/driver/jobs" }];
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "gridd-3edba";
+    return [
+      { source: "/jobs", destination: "/driver/jobs" },
+      {
+        source: "/__/auth/:path*",
+        destination: `https://${projectId}.firebaseapp.com/__/auth/:path*`,
+      },
+      {
+        source: "/__/firebase/:path*",
+        destination: `https://${projectId}.firebaseapp.com/__/firebase/:path*`,
+      },
+    ];
   },
 };
 

@@ -13,6 +13,7 @@ import { PipelineTimeline } from "@/components/dispatch/PipelineTimeline";
 import { DriverMode } from "@/components/dispatch/DriverMode";
 import { JobCard } from "@/components/dispatch/JobCard";
 import { FlashConfetti } from "@/components/dispatch/FlashConfetti";
+import { DispatchErrorBoundary } from "@/components/dispatch/DispatchErrorBoundary";
 import { AnimatePresence } from "framer-motion";
 import type { DispatchJob } from "@/types/dispatch";
 
@@ -245,7 +246,7 @@ export default function DispatchPage() {
   }
 
   return (
-    <>
+    <DispatchErrorBoundary jobs={jobs}>
       <div className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
         {/* Offline strip */}
         {offline && (
@@ -368,7 +369,7 @@ export default function DispatchPage() {
 
       {/* Flash + Confetti */}
       <FlashConfetti trigger={confettiTrigger} />
-    </>
+    </DispatchErrorBoundary>
   );
 }
 
