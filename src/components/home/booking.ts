@@ -24,14 +24,13 @@ export type BookingPayload = {
   estPrice?: number;
 };
 
-export async function submitBooking(payload: BookingPayload) {
+export async function submitBooking(payload: BookingPayload): Promise<string> {
   const digits = payload.customerPhone.replace(/\D/g, "");
   if (!digits || digits.length < 10) {
     throw new Error("Please enter a valid phone number");
   }
   const normalized = digits.length === 10 ? `+1${digits}` : `+${digits}`;
 
-  // Validate at least street or city for each stop
   if (!payload.pickupAddress.street && !payload.pickupAddress.city) {
     throw new Error("Please enter a pickup address or city");
   }
@@ -71,4 +70,5 @@ export async function submitBooking(payload: BookingPayload) {
   if (!data.ok) {
     throw new Error(data.error || "Failed to create job");
   }
+  return data.jobId;
 }

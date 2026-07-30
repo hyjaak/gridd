@@ -80,12 +80,15 @@ export default function BookingSection({ market }: Props) {
     }
   };
 
+  const [jobLink, setJobLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await submitBooking({
+      const jobId = await submitBooking({
         jobType: svc,
         pickupAddress,
         dropoffAddress,
@@ -98,6 +101,7 @@ export default function BookingSection({ market }: Props) {
         estMiles: estPrice?.miles,
         estPrice: estPrice?.price,
       });
+      setJobLink(`https://gridd.click/j/${jobId}`);
       setDone(true);
     } catch (err) {
       setError(
@@ -108,6 +112,15 @@ export default function BookingSection({ market }: Props) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const copyLink = async () => {
+    if (!jobLink) return;
+    try {
+      await navigator.clipboard.writeText(jobLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* fallback handled below */ }
   };
 
   if (done) {
@@ -122,9 +135,24 @@ export default function BookingSection({ market }: Props) {
         <p className="text-[15px] text-[#5c6a62] mb-2">
           You'll have a flat price within the hour — watch your texts.
         </p>
-        <p className="text-[13px] text-[#5c6a62]">
+        <p className="text-[13px] text-[#5c6a62] mb-4">
           The text comes from <b>{PHONE}</b> — save the number, that thread is your receipt and tracker.
         </p>
+
+        {jobLink && (
+          <div className="bg-[#f2faf6] border border-[#0e9f6e]/20 rounded-xl p-4">
+            <p className="text-[13px] font-bold text-[#101613] mb-2">Watch your price live:</p>
+            <a href={jobLink} target="_blank" rel="noopener noreferrer"
+              className="text-[#0e9f6e] font-extrabold text-[14px] no-underline hover:underline break-all block mb-2">
+              {jobLink}
+            </a>
+            <button onClick={copyLink}
+              className="bg-[#0e9f6e] text-white font-bold text-[13px] px-5 py-2 rounded-full hover:bg-[#0a7a54] transition-colors cursor-pointer border-none">
+              {copied ? "Copied ✓" : "Copy link"}
+            </button>
+            <p className="text-[11px] text-[#5c6a62] mt-2">Bookmark it — your quote, live updates, and receipt all live there.</p>
+          </div>
+        )}
       </div>
     );
   }

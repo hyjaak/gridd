@@ -461,9 +461,11 @@ service cloud.firestore {
      * any document under the database (rules evaluate `allow` as OR across
      * matching rules, so this only widens — it never blocks user-owned access).
      */
-    /** GRIDD Dispatch Cockpit — CEO-only jobs board. All writes via Admin SDK (server routes). */
+    /** GRIDD Dispatch Cockpit — CEO-only jobs board. All writes via Admin SDK (server routes). Single-doc get is public for job link page. */
     match /dispatchJobs/{jobId} {
-      allow read, write: if request.auth != null && request.auth.uid == "51hByax004NTrTblndZ4uRUhKhU2";
+      allow get: if true;
+      allow list: if request.auth != null && request.auth.uid == "51hByax004NTrTblndZ4uRUhKhU2";
+      allow write: if request.auth != null && request.auth.uid == "51hByax004NTrTblndZ4uRUhKhU2";
     }
 
     match /{document=**} {

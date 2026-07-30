@@ -2,18 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
-import { CEO_UID } from "@/lib/constants";
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { CEO_UID, SERVICES } from "@/lib/constants";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import LiteJobCard from "@/components/dispatch/LiteJobCard";
 import type { DispatchJob } from "@/types/dispatch";
-
-const STATUS_LABEL: Record<string, string> = {
-  request: "NEW", quoted: "QUOTED", accepted: "BOOKED", assigned: "BOOKED",
-  pickup: "PICKUP", in_progress: "EN ROUTE", proof: "PHOTO", paid: "PAID",
-};
 
 function todayStart(): number {
   const d = new Date();
@@ -26,26 +21,10 @@ function isToday(ts: any): boolean {
   return t >= todayStart() && t < todayStart() + 86_400_000;
 }
 
-function relTime(ts: any): string {
-  if (!ts) return "";
-  const t = ts.seconds ? ts.seconds * 1000 : (ts.toMillis?.() ?? 0);
-  const m = Math.floor((Date.now() - t) / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
 function fmtTime(ts: any): string {
   if (!ts) return "";
   const t = ts.seconds ? ts.seconds * 1000 : (ts.toMillis?.() ?? 0);
   return new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
-function addrStr(a: { street?: string; city: string } | undefined): string {
-  if (!a) return "—";
-  return a.street ? `${a.street}, ${a.city}` : a.city;
 }
 
 export default function DispatchLitePage() {
@@ -56,6 +35,15 @@ export default function DispatchLitePage() {
   const [quotingId, setQuotingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [showNewJob, setShowNewJob] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newJobType, setNewJobType] = useState("delivery");
+  const [newPickup, setNewPickup] = useState("");
+  const [newDropoff, setNewDropoff] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newWindow, setNewWindow] = useState("");
+  const [newSubmitting, setNewSubmitting] = useState(false);
   const jobsRef = useRef<DispatchJob[]>([]);
 
   useEffect(() => {
@@ -89,13 +77,17 @@ export default function DispatchLitePage() {
     optimisticUpdate(jobId, { status: "quoted", quoteAmount: Number(price) });
     try {
       const res = await fetch("/api/send-quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId, amount: Number(price), phone: job.customerPhone }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && data.error !== "Twilio not configured") throw new Error(data.error || "Failed");
+      // Always set quoted — even if Twilio is off
       await updateDoc(doc(db, "dispatchJobs", jobId), { status: "quoted", quoteAmount: Number(price), quotedAt: serverTimestamp() });
       setQuotePrices((p) => ({ ...p, [jobId]: "" }));
+      if (data.error === "Twilio not configured") {
+        setError("SMS off — copy & text it yourself");
+      }
     } catch (e) {
       rollback();
       setError(e instanceof Error ? e.message : "Failed to send quote");
@@ -118,12 +110,13 @@ export default function DispatchLitePage() {
     setUploadingId(jobId);
     setError(null);
     try {
+      const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+      const { storage } = await import("@/lib/firebase");
       const storageRef = ref(storage, `proof/${jobId}.jpg`);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       await handleAdvance(jobId, "proof", { proofPhotoUrl: url });
-    } catch (e) {
-      // Still advance even if photo fails
+    } catch {
       await handleAdvance(jobId, "proof", {});
       setError("Photo upload failed — tap to retry");
     } finally {
@@ -136,6 +129,28 @@ export default function DispatchLitePage() {
       paidAt: new Date().toISOString(),
       ...(cash ? { paymentMethod: "cash" } : {}),
     });
+  };
+
+  const handleNewJob = async () => {
+    if (!newPhone.trim()) return;
+    setNewSubmitting(true);
+    setError(null);
+    try {
+      await addDoc(collection(db, "dispatchJobs"), {
+        jobType: newJobType, status: "request", source: "call",
+        customerPhone: newPhone.replace(/\D/g, "").length === 10 ? `+1${newPhone.replace(/\D/g, "")}` : newPhone,
+        contactName: newName.trim() || "", description: newDesc.trim() || "",
+        timeWindow: newWindow, market: "DAY",
+        pickupAddress: { city: newPickup.trim() || "Dayton", street: "" },
+        dropoffAddress: { city: newDropoff.trim() || "Dayton", street: "" },
+        createdAt: new Date(),
+      });
+      setShowNewJob(false); setNewName(""); setNewPhone(""); setNewPickup(""); setNewDropoff(""); setNewDesc(""); setNewWindow(""); setNewJobType("delivery");
+    } catch (e) {
+      setError("Failed to create job");
+    } finally {
+      setNewSubmitting(false);
+    }
   };
 
   if (loading) return <LoadingScreen />;
@@ -165,7 +180,13 @@ export default function DispatchLitePage() {
   return (
     <main className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
       <header className="sticky top-0 z-20 bg-[rgba(238,243,239,0.92)] backdrop-blur border-b border-[rgba(16,22,19,0.09)] px-[4vw] py-3 flex items-center justify-between">
-        <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">gridd</div>
+        <div className="flex items-center gap-3">
+          <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">gridd</div>
+          <button onClick={() => setShowNewJob(!showNewJob)}
+            className="text-[11px] font-extrabold bg-[#0e9f6e] text-white rounded-full px-3 py-1.5 border-none cursor-pointer hover:bg-[#0a7a54] transition-colors">
+            + New job
+          </button>
+        </div>
         <div className="flex items-center gap-4 text-[13px] font-extrabold text-[#5c6a62]">
           <span>${todayTotal.toFixed(0)} <span className="text-[10px] font-bold">today</span></span>
           <span>{doneToday.length} <span className="text-[10px] font-bold">runs</span></span>
@@ -183,10 +204,35 @@ export default function DispatchLitePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 pb-10 max-w-[1400px] mx-auto">
         <Column title="New requests" count={newReqs.length}>
-          {newReqs.length === 0 && <Empty>No new requests.</Empty>}
+          {/* New job inline form */}
+          {showNewJob && (
+            <div className="bg-white border border-[#0e9f6e] rounded-[18px] p-4 space-y-2">
+              <div className="text-[12px] font-extrabold text-[#0e9f6e] mb-1">+ New job (phone booking)</div>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e]" />
+              <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone *" required className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e]" />
+              <select value={newJobType} onChange={(e) => setNewJobType(e.target.value)} className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e]">
+                {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+              <div className="flex gap-2">
+                <input value={newPickup} onChange={(e) => setNewPickup(e.target.value)} placeholder="Pickup city" className="flex-1 border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e]" />
+                <input value={newDropoff} onChange={(e) => setNewDropoff(e.target.value)} placeholder="Drop city" className="flex-1 border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e]" />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {["ASAP", "This afternoon", "Tomorrow"].map((w) => (
+                  <button key={w} type="button" onClick={() => setNewWindow(newWindow === w ? "" : w)}
+                    className={`text-[10px] font-bold rounded-full px-2 py-1 border transition-colors ${newWindow === w ? "bg-[#0e9f6e] text-white border-[#0e9f6e]" : "bg-white text-[#5c6a62] border-black/12"}`}>{w}</button>
+                ))}
+              </div>
+              <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description" rows={2} className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] resize-none" />
+              <button onClick={handleNewJob} disabled={newSubmitting || !newPhone.trim()}
+                className="w-full bg-[#0e9f6e] text-white font-bold text-[13px] py-2.5 rounded-full border-none cursor-pointer disabled:opacity-50">
+                {newSubmitting ? "Creating..." : "Create job"}
+              </button>
+            </div>
+          )}
+          {newReqs.length === 0 && !showNewJob && <Empty>No new requests.</Empty>}
           {newReqs.map((job) => (
-            <JobCard key={job.id} job={job}
-              quotePrice={quotePrices[job.id] ?? ""}
+            <LiteJobCard key={job.id} job={job} quotePrice={quotePrices[job.id] ?? ""}
               onQuoteChange={(v) => setQuotePrices((p) => ({ ...p, [job.id]: v }))}
               onSendQuote={() => handleSendQuote(job.id)}
               onAdvance={(s, e) => handleAdvance(job.id, s, e)}
@@ -198,8 +244,7 @@ export default function DispatchLitePage() {
         <Column title="Active" count={active.length}>
           {active.length === 0 && <Empty>Nothing in motion.</Empty>}
           {active.map((job) => (
-            <JobCard key={job.id} job={job}
-              quotePrice={quotePrices[job.id] ?? ""}
+            <LiteJobCard key={job.id} job={job} quotePrice={quotePrices[job.id] ?? ""}
               onQuoteChange={(v) => setQuotePrices((p) => ({ ...p, [job.id]: v }))}
               onSendQuote={() => handleSendQuote(job.id)}
               onAdvance={(s, e) => handleAdvance(job.id, s, e)}
@@ -213,7 +258,7 @@ export default function DispatchLitePage() {
           {doneToday.map((job) => (
             <div key={job.id} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-extrabold text-[14px]">{job.contactName || job.contactName || "Unknown"}</span>
+                <span className="font-extrabold text-[14px]">{job.contactName || "Unknown"}</span>
                 <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${job.quoteAmount?.toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-[#5c6a62] font-semibold mt-1">
@@ -253,176 +298,4 @@ function Column({ title, count, children }: { title: string; count: number; chil
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <div className="border-2 border-dashed border-[rgba(16,22,19,0.14)] rounded-[18px] p-6 text-center text-[13px] text-[#5c6a62] font-semibold">{children}</div>;
-}
-
-function JobCard({ job, quotePrice, onQuoteChange, onSendQuote, onAdvance, onPhotoUpload, onPaid, quotingId, uploadingId }: {
-  job: DispatchJob; quotePrice: string;
-  onQuoteChange: (v: string) => void; onSendQuote: () => void;
-  onAdvance: (s: string, e?: Record<string, unknown>) => void;
-  onPhotoUpload: (f: File) => void; onPaid: (c?: boolean) => void;
-  quotingId: string | null; uploadingId: string | null;
-}) {
-  const [advancing, setAdvancing] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const busy = advancing || quotingId === job.id || uploadingId === job.id;
-
-  const doAdvance = async (s: string, e?: Record<string, unknown>) => {
-    setAdvancing(true);
-    try { await onAdvance(s, e); } finally { setAdvancing(false); }
-  };
-
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) onPhotoUpload(f);
-  };
-
-  const name = job.contactName || job.contactName || "Unknown";
-  const market = job.market;
-  const pickup = job.pickupAddress;
-  const dropoff = job.dropoffAddress;
-  const notes = [pickup?.notes, dropoff?.notes].filter(Boolean);
-
-  return (
-    <div className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px_15px_13px] shadow-[0_10px_30px_rgba(16,22,19,0.06)] transition-shadow duration-200 hover:shadow-[0_10px_30px_rgba(16,22,19,0.1)]">
-      {/* Row 1: Name · phone · market · status */}
-      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-        <span className="font-extrabold text-[14px] truncate max-w-[140px]">{name}</span>
-        {job.customerPhone && (
-          <a href={`tel:${job.customerPhone}`} className="text-[11px] text-[#0e9f6e] font-bold no-underline hover:underline shrink-0">
-            {job.customerPhone}
-          </a>
-        )}
-        {market && (
-          <span className="text-[9.5px] font-extrabold rounded-md px-1.5 py-0.5 bg-[#101613] text-white">{market}</span>
-        )}
-        <span className="text-[9.5px] font-extrabold rounded-md px-1.5 py-0.5 bg-[#d9a441] text-white ml-auto">
-          {STATUS_LABEL[job.status] || job.status}
-        </span>
-      </div>
-
-      {/* Row 2: jobType → pickup → dropoff */}
-      <div className="text-[12.5px] text-[#5c6a62] font-semibold mb-1 leading-snug">
-        {job.jobType} · {addrStr(pickup)}
-        <span className="text-[#0e9f6e] mx-1">→</span>
-        {addrStr(dropoff)}
-      </div>
-
-      {/* Row 3: timeWindow + rel time */}
-      <div className="flex items-center gap-2 mb-1.5">
-        {job.timeWindow && (
-          <span className="text-[10.5px] font-bold rounded-md px-1.5 py-0.5 bg-[#eef3ef] text-[#5c6a62]">{job.timeWindow}</span>
-        )}
-        <span className="text-[10.5px] text-[#8fa096] font-semibold">{relTime(job.createdAt)}</span>
-      </div>
-
-      {/* Description — full text */}
-      <p className="text-[12.5px] text-[#5c6a62] leading-relaxed mb-1.5">{job.description}</p>
-
-      {/* Per-stop notes */}
-      {notes.length > 0 && notes.map((n, i) => n ? (
-        <div key={i} className="text-[11px] text-[#d9a441] font-semibold mb-0.5">⚠ {n}</div>
-      ) : null)}
-
-      {/* Item photo */}
-      {job.itemPhotoUrl && (
-        <a href={job.itemPhotoUrl} target="_blank" rel="noopener noreferrer"
-          className="inline-block w-16 h-16 rounded-lg overflow-hidden border border-[rgba(16,22,19,0.09)] mb-2">
-          <img src={job.itemPhotoUrl} alt="" className="w-full h-full object-cover" />
-        </a>
-      )}
-
-      {/* Est price / miles */}
-      {(job.estPrice || job.estMiles) && (
-        <div className="text-[11px] text-[#5c6a62] font-semibold mb-2">
-          ≈ ${job.estPrice} suggested{job.estMiles ? ` · ${job.estMiles} mi` : ""}
-        </div>
-      )}
-
-      {/* Quote amount display */}
-      {job.quoteAmount != null && (
-        <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e] mb-2">
-          ${job.quoteAmount.toFixed(2)}
-        </div>
-      )}
-
-      {/* ── NEW: quote input + send ── */}
-      {job.status === "request" && (
-        <div className="flex gap-2 mb-2">
-          <div className="relative flex-1">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
-            <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
-              value={quotePrice} onChange={(e) => onQuoteChange(e.target.value)}
-              className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-2.5 py-2.5 text-sm text-[#101613] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] focus:bg-white transition-colors pl-6" />
-          </div>
-          <button onClick={onSendQuote} disabled={busy || !quotePrice.trim()}
-            className="border-none font-inherit font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity duration-200">
-            {quotingId === job.id ? "..." : "Send"}
-          </button>
-          <button onClick={() => { if (confirm("Decline this request?")) doAdvance("declined"); }}
-            className="border-none font-inherit font-extrabold text-[11.5px] px-1 py-1.5 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b] transition-colors duration-200">
-            Decline
-          </button>
-        </div>
-      )}
-
-      {/* ── QUOTED: waiting + resend + mark accepted ── */}
-      {job.status === "quoted" && (
-        <div className="flex flex-col gap-1.5 mb-2">
-          <div className="text-[12px] text-[#5c6a62] font-semibold">${job.quoteAmount?.toFixed(2)} · waiting on YES</div>
-          <div className="flex gap-2">
-            <button onClick={onSendQuote} disabled={busy}
-              className="border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2 cursor-pointer bg-[#101613] text-white disabled:opacity-50 transition-opacity duration-200">
-              {quotingId === job.id ? "..." : "Resend"}
-            </button>
-            <button onClick={() => doAdvance("accepted")}
-              className="border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2 cursor-pointer bg-[#0e9f6e] text-white">
-              Mark accepted
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── ACCEPTED / ASSIGNED ── */}
-      {["accepted", "assigned"].includes(job.status) && (
-        <button onClick={() => doAdvance("pickup")} disabled={busy}
-          className="w-full border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2.5 cursor-pointer bg-[#101613] text-white disabled:opacity-50 transition-opacity duration-200">
-          {busy ? "..." : "📌 Arrived at pickup"}
-        </button>
-      )}
-
-      {/* ── PICKUP ── */}
-      {job.status === "pickup" && (
-        <button onClick={() => doAdvance("in_progress")} disabled={busy}
-          className="w-full border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2.5 cursor-pointer bg-[#101613] text-white disabled:opacity-50 transition-opacity duration-200">
-          {busy ? "..." : "🚚 Loaded — rolling"}
-        </button>
-      )}
-
-      {/* ── IN_PROGRESS: photo upload ── */}
-      {job.status === "in_progress" && (
-        <div className="flex flex-col gap-2">
-          <button onClick={() => fileRef.current?.click()} disabled={busy}
-            className="w-full border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2.5 cursor-pointer bg-[#101613] text-white disabled:opacity-50 transition-opacity duration-200">
-            {uploadingId === job.id ? "📸 Uploading..." : "📸 Arrived — take photo"}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" capture="environment"
-            onChange={handleFile} className="hidden" />
-        </div>
-      )}
-
-      {/* ── PROOF: mark paid + cash ── */}
-      {job.status === "proof" && (
-        <div className="flex gap-2">
-          <button onClick={() => onPaid()} disabled={busy}
-            className="flex-1 border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50 transition-opacity duration-200">
-            {busy ? "..." : "💰 Mark paid"}
-          </button>
-          <button onClick={() => onPaid(true)} disabled={busy}
-            className="flex-1 border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2.5 cursor-pointer bg-[#d9a441] text-white disabled:opacity-50 transition-opacity duration-200">
-            {busy ? "..." : "💵 Paid cash"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
