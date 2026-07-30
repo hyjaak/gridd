@@ -46,7 +46,7 @@ function requiredDocs(role: UserRole) {
 }
 
 function routeForRole(role: UserRole) {
-  if (role === "ceo") return "/dispatch";
+  if (role === "ceo") return "/dispatch-lite";
   if (role === "driver") return "/driver/jobs";
   return "/home";
 }

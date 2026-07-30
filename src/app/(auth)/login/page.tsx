@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { GoogleAuthProvider, getRedirectResult, signInWithRedirect } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { logIn, googleSignIn } from "@/lib/auth";
+import { logIn, googleSignIn, resetPassword } from "@/lib/auth";
 
 function isMobile(): boolean {
   if (typeof window === "undefined") return false;
@@ -18,6 +18,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const next = searchParams.get("next");
 
@@ -29,21 +31,20 @@ export default function LoginPage() {
         console.log("[login] getRedirectResult succeeded for", result.user?.email);
         try {
           await googleSignIn();
-          window.location.assign(next || "/dispatch");
+          window.location.assign(next || "/dispatch-lite");
         } catch (err: any) {
           console.error("[login] getRedirectResult googleSignIn error:", err);
           if (err.name === "GoogleNeedsRoleChoice") {
             setError(err.message);
             return;
           }
-          setError(err.message || "Google sign-in failed");
+          setError(err.code || err.message || "Google sign-in failed");
         }
       })
       .catch((err) => {
-        // Log all redirect errors visibly
         console.error("[login] getRedirectResult error:", err.code, err.message);
         if (err.code !== "auth/no-redirect-operation") {
-          setError(`Redirect sign-in error: ${err.message || err.code}`);
+          setError(`${err.code || ""} ${err.message || ""}`.trim());
         }
       });
   }, [next]);
@@ -54,10 +55,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await logIn(email, password, next ?? undefined);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Sign-in failed";
-      console.error("[login] email sign-in error:", msg);
-      setError(msg);
+    } catch (err: any) {
+      const code = err.code || "";
+      const msg = err.message || "Sign-in failed";
+      console.error("[login] email sign-in error:", code, msg);
+      setError(code ? `${code} — ${msg}` : msg);
     } finally {
       setLoading(false);
     }
@@ -71,17 +73,40 @@ export default function LoginPage() {
         console.log("[login] mobile detected — using signInWithRedirect");
         const provider = new GoogleAuthProvider();
         await signInWithRedirect(auth, provider);
-        // Page will redirect — this line won't execute
       } else {
         console.log("[login] desktop detected — using signInWithPopup");
         await googleSignIn();
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Google sign-in failed";
-      console.error("[login] Google sign-in error:", msg);
-      setError(msg);
+    } catch (err: any) {
+      const code = err.code || "";
+      const msg = err.message || "Google sign-in failed";
+      console.error("[login] Google sign-in error:", code, msg);
+      setError(code ? `${code} — ${msg}` : msg);
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!email.trim()) {
+      setError("Enter your email address above first, then tap this link.");
+      return;
+    }
+    setError("");
+    setResetting(true);
+    try {
+      await resetPassword(email.trim());
+      setResetSent(true);
+    } catch (err: any) {
+      const code = err.code || "";
+      const msg = err.message || "Password reset failed";
+      if (code === "auth/user-not-found") {
+        setError(`No account found for ${email}. Double-check the email or sign up.`);
+      } else {
+        setError(code ? `${code} — ${msg}` : msg);
+      }
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -111,14 +136,20 @@ export default function LoginPage() {
           </span>
         </button>
 
-        {/* Error display — always visible when set */}
+        {/* Error display — exact code inline */}
         {error && (
-          <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-[13px] text-center">
+          <div className="mb-4 p-3 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-[13px] text-center break-words">
             {error}
           </div>
         )}
 
-        {/* Divider — always visible */}
+        {resetSent && (
+          <div className="mb-4 p-3 bg-[#0e9f6e]/20 border border-[#0e9f6e] rounded-xl text-[#0e9f6e] text-[13px] text-center">
+            Check {email} — tap the link, set your password, come back and sign in.
+          </div>
+        )}
+
+        {/* Divider */}
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-1 h-px bg-[#2a2a2a]" />
           <span className="text-[#5c6a62] text-[12px] font-medium">Or sign in with email</span>
@@ -150,6 +181,18 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+
+        {/* Forgot / set password link */}
+        <div className="text-center mt-3">
+          <button
+            type="button"
+            onClick={handleResetPassword}
+            disabled={resetting}
+            className="text-[#0e9f6e] text-[13px] font-semibold bg-transparent border-none cursor-pointer hover:text-white transition-colors disabled:opacity-50"
+          >
+            {resetting ? "Sending..." : "Forgot / set password"}
+          </button>
+        </div>
 
         <p className="text-center mt-6 text-[12px] text-[#5c6a62]">
           <a href="/" className="text-[#7a8a7f] hover:text-white transition-colors no-underline">
