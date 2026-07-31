@@ -55,6 +55,21 @@ body {
   }
 }
 
+@keyframes counterIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-counter-in {
+  animation: counterIn 0.35s ease-out;
+}
+
 @keyframes fadeSlide {
   from {
     opacity: 0;

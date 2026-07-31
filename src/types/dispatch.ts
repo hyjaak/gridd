@@ -7,6 +7,12 @@ export type StopAddress = {
   notes?: string;
 };
 
+export type OfferLogEntry = {
+  by: "owner" | "customer";
+  amount: number;
+  at: any;
+};
+
 export type DispatchJob = {
   id: string;
   market: string;
@@ -27,5 +33,10 @@ export type DispatchJob = {
   paymentMethod?: string;
   createdAt?: any;
   quotedAt?: any;
+  acceptedAt?: any;
   paidAt?: any;
+  offerAmount?: number;
+  offerBy?: "owner" | "customer";
+  agreedAmount?: number;
+  offerLog?: OfferLogEntry[];
 };

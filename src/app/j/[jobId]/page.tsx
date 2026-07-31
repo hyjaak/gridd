@@ -19,13 +19,16 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [confetti, setConfetti] = useState(false);
+  const [offerAmount, setOfferAmount] = useState("");
+  const [offerSending, setOfferSending] = useState(false);
+  const [offerSent, setOfferSent] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "dispatchJobs", params.jobId), (snap) => {
       if (!snap.exists()) { setError("Job not found"); setLoading(false); return; }
       setJob({ id: snap.id, ...snap.data() } as DispatchJob);
       setLoading(false);
-    }, (err) => {
+    }, () => {
       setError("Unable to load job — check the link or text us.");
       setLoading(false);
     });
@@ -51,6 +54,29 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
     }
   };
 
+  const handleOffer = async () => {
+    const amt = Number(offerAmount);
+    if (isNaN(amt) || amt < 20 || amt > 500) { setError("Offer must be $20–$500"); return; }
+    setOfferSending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/counter-offer", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: params.jobId, amount: amt }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Failed");
+      setOfferSent(true);
+      setOfferAmount("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to send offer");
+    } finally {
+      setOfferSending(false);
+    }
+  };
+
+  const showOfferInput = () => setOfferSent(false);
+
   if (loading) return (
     <div className="min-h-screen bg-[#eef3ef] flex items-center justify-center">
       <div className="text-[#5c6a62] text-[15px] font-semibold animate-pulse">Loading job…</div>
@@ -68,6 +94,9 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
   const s = job.status;
   const idShort = params.jobId.slice(0, 6);
   const isDone = ["paid", "declined", "cancelled"].includes(s);
+  const standing = job.offerAmount ?? job.quoteAmount;
+  const standingBy = job.offerBy === "customer" ? "Your offer" : "Ibrahim's price";
+  const log = job.offerLog ?? [];
 
   return (
     <main className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
@@ -81,20 +110,15 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
       </header>
 
       {confetti && (
-        <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-[60px]">
-          🎉
-        </div>
+        <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center text-[60px]">🎉</div>
       )}
 
       <div className="max-w-lg mx-auto px-[5vw] py-8">
-        {/* request */}
         {s === "request" && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#d9a441] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">⏳</div>
             <h1 className="text-[28px] font-[800] font-bricolage mb-2">We're pricing your run</h1>
-            <p className="text-[15px] text-[#5c6a62] leading-relaxed mb-6">
-              A flat number appears right here, usually within the hour. Refresh-free — this page updates itself.
-            </p>
+            <p className="text-[15px] text-[#5c6a62] leading-relaxed mb-6">A flat number appears right here, usually within the hour.</p>
             <div className="bg-white border border-[rgba(16,22,19,0.09)] rounded-2xl p-5 text-left">
               <div className="font-extrabold text-[14px] mb-2">{job.contactName || "Your run"}</div>
               <div className="text-[13px] text-[#5c6a62] font-semibold">{job.jobType} · {job.pickupAddress?.city} → {job.dropoffAddress?.city}</div>
@@ -102,14 +126,11 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
             </div>
             <div className="mt-6 text-left bg-white border border-[rgba(16,22,19,0.09)] rounded-2xl p-5">
               <div className="text-[13px] font-bold text-[#101613] mb-3">Who shows up</div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0e9f6e] to-[#0a7a54] flex items-center justify-center text-white text-[18px] font-extrabold">I</div>
-                <div>
-                  <div className="font-extrabold text-[14px]">Ibrahim — owner, operator</div>
-                  <div className="text-[12px] text-[#5c6a62]">The person who prices it is the person who shows up.</div>
-                </div>
+                <div><div className="font-extrabold text-[14px]">Ibrahim — owner, operator</div><div className="text-[12px] text-[#5c6a62]">The person who prices it is the person who shows up.</div></div>
               </div>
-              <div className="mt-4 space-y-2 text-[13px] text-[#5c6a62]">
+              <div className="space-y-2 text-[13px] text-[#5c6a62]">
                 {["Flat price locked — not an estimate", "Pay after it's done — card, tap, or cash", "Photo proof sent to your phone", "Refresh-free live updates"].map((p, i) => (
                   <div key={i} className="flex items-center gap-2"><span className="text-[#0e9f6e] font-bold">✓</span>{p}</div>
                 ))}
@@ -118,33 +139,91 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
           </div>
         )}
 
-        {/* quoted */}
         {s === "quoted" && (
           <div className="text-center">
             <div className="w-16 h-16 rounded-full bg-[#0e9f6e] text-white text-[28px] font-extrabold flex items-center justify-center mx-auto mb-4">$</div>
-            <h1 className="text-[48px] font-[800] font-bricolage text-[#0e9f6e] mb-1">${job.quoteAmount?.toFixed(2)}</h1>
-            <p className="text-[14px] text-[#5c6a62] font-semibold mb-4">Flat. Not an estimate.</p>
+
+            {/* Standing offer */}
+            <h1 className="text-[48px] font-[800] font-bricolage text-[#0e9f6e] mb-1">${standing?.toFixed(2)}</h1>
+            <p className="text-[14px] text-[#5c6a62] font-semibold mb-2">{standingBy}</p>
+            {job.offerBy === "customer" && (
+              <p className="text-[14px] text-[#d9a441] font-bold mb-4 animate-pulse">Waiting on Ibrahim…</p>
+            )}
 
             {/* 5-step rail */}
             <div className="flex items-center gap-1 justify-center mb-6">
               {["Quoted", "Booked", "Rolling", "Photo", "Paid"].map((step, i) => (
                 <div key={step} className="flex items-center gap-1">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i === 0 ? "bg-[#0e9f6e] text-white animate-pulse" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>
-                    {i === 0 ? "$" : i + 1}
-                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i === 0 ? "bg-[#0e9f6e] text-white animate-pulse" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>{i === 0 ? "$" : i + 1}</div>
                   {i < 4 && <div className="w-4 h-0.5 bg-[#d9d9d9]" />}
                 </div>
               ))}
             </div>
 
-            <div className="bg-white border border-[rgba(16,22,19,0.09)] rounded-2xl p-5 text-left mb-6">
-              <div className="text-[13px] font-bold text-[#101613] mb-3">Who shows up</div>
+            {/* YES / waiting pulse */}
+            {job.offerBy === "customer" ? (
+              <div key={job.offerLog?.length ?? 0}
+                className="w-full bg-[#d9a441]/15 border border-[#d9a441] font-bold text-[17px] py-4 rounded-full mb-3 flex items-center justify-center gap-2 animate-pulse">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#d9a441] animate-ping" />
+                <span>Waiting on Ibrahim…</span>
+              </div>
+            ) : (
+              <button onClick={handleAccept} disabled={accepting || accepted}
+                className="w-full bg-[#0e9f6e] text-white font-bold text-[17px] py-4 rounded-full shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer border-none mb-3">
+                {accepting ? "Booking..." : accepted ? "Booked ✓" : `YES — book it for $${standing?.toFixed(2)}`}
+              </button>
+            )}
+            {accepted && <p className="text-[#0e9f6e] text-[14px] font-bold mb-3">We'll roll soon — watch your phone.</p>}
+
+            {/* Owner counter soft highlight */}
+            {job.offerBy === "owner" && (job.offerLog?.length ?? 0) > 0 && (
+              <div className="w-full bg-[#0e9f6e]/10 border border-[#0e9f6e]/40 rounded-2xl py-3 px-4 mb-3 animate-counter-in">
+                <div className="text-[15px] font-extrabold text-[#0e9f6e]">
+                  Ibrahim countered: ${job.offerAmount?.toFixed(2)}
+                </div>
+                <div className="text-[12px] text-[#5c6a62] font-semibold mt-0.5">
+                  Your move — book it or offer another price.
+                </div>
+              </div>
+            )}
+
+            {/* Offer input — customer can always raise their offer */}
+            {!offerSent && (
+              <div className="flex flex-col gap-2">
+                <button onClick={showOfferInput}
+                  className="text-[13px] font-extrabold text-[#5c6a62] bg-transparent border-none cursor-pointer hover:text-[#101613] transition-colors">
+                  Offer a different price
+                </button>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[14px] font-extrabold">$</span>
+                    <input type="number" step="5" min="20" max="500" value={offerAmount}
+                      onChange={(e) => setOfferAmount(e.target.value)} placeholder="20–500"
+                      className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-3 text-[14px] bg-white focus:outline-none focus:border-[#0e9f6e] pl-7" />
+                  </div>
+                  <button onClick={handleOffer} disabled={offerSending || !offerAmount.trim()}
+                    className="border-none font-inherit font-extrabold text-sm rounded-xl px-5 py-3 cursor-pointer bg-[#101613] text-white disabled:opacity-50">
+                    {offerSending ? "..." : "Send offer"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {offerSent && <p className="text-[13px] text-[#0e9f6e] font-bold mt-2">Offer sent — Ibrahim sees it instantly.</p>}
+
+            {/* Offer history */}
+            {log.length > 0 && (
+              <div className="mt-4 text-[12px] text-[#5c6a62] font-semibold">
+                {log.map((e, i) => (
+                  <span key={i}>{i > 0 && " → "}${e.amount}</span>
+                ))}
+              </div>
+            )}
+
+            {/* Who shows up */}
+            <div className="mt-6 bg-white border border-[rgba(16,22,19,0.09)] rounded-2xl p-5 text-left">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0e9f6e] to-[#0a7a54] flex items-center justify-center text-white text-[18px] font-extrabold">I</div>
-                <div>
-                  <div className="font-extrabold text-[14px]">Ibrahim — owner, operator</div>
-                  <div className="text-[12px] text-[#5c6a62]">The person who prices it is the person who shows up.</div>
-                </div>
+                <div><div className="font-extrabold text-[14px]">Ibrahim — owner, operator</div><div className="text-[12px] text-[#5c6a62]">The person who prices it is the person who shows up.</div></div>
               </div>
               <div className="space-y-1.5 text-[13px] text-[#5c6a62]">
                 {["Flat price locked — not an estimate", "Pay after it's done — card, tap, or cash", "Photo proof sent to your phone"].map((p, i) => (
@@ -152,16 +231,9 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
                 ))}
               </div>
             </div>
-
-            <button onClick={handleAccept} disabled={accepting || accepted}
-              className="w-full bg-[#0e9f6e] text-white font-bold text-[17px] py-4 rounded-full shadow-[0_12px_26px_rgba(14,159,110,.32)] hover:bg-[#0a7a54] disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer border-none">
-              {accepting ? "Booking..." : accepted ? "Booked ✓" : "YES — book my run"}
-            </button>
-            {accepted && <p className="text-[#0e9f6e] text-[14px] font-bold mt-2">We'll roll soon — watch your phone.</p>}
           </div>
         )}
 
-        {/* accepted/assigned/pickup */}
         {["accepted", "assigned", "pickup"].includes(s) && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#0e9f6e] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">✓</div>
@@ -170,9 +242,7 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
             <div className="flex items-center gap-1 justify-center mb-4">
               {["Quoted", "Booked", "Rolling", "Photo", "Paid"].map((step, i) => (
                 <div key={step} className="flex items-center gap-1">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 1 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>
-                    {i === 0 ? "$" : i + 1}
-                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 1 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>{i === 0 ? "$" : i + 1}</div>
                   {i < 4 && <div className="w-4 h-0.5 bg-[#d9d9d9]" />}
                 </div>
               ))}
@@ -180,7 +250,6 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
           </div>
         )}
 
-        {/* in_progress */}
         {s === "in_progress" && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#0e9f6e] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">🚚</div>
@@ -189,9 +258,7 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
             <div className="flex items-center gap-1 justify-center mb-4">
               {["Quoted", "Booked", "Rolling", "Photo", "Paid"].map((step, i) => (
                 <div key={step} className="flex items-center gap-1">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 2 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>
-                    {i === 0 ? "$" : i + 1}
-                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 2 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>{i === 0 ? "$" : i + 1}</div>
                   {i < 4 && <div className="w-4 h-0.5 bg-[#d9d9d9]" />}
                 </div>
               ))}
@@ -199,7 +266,6 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
           </div>
         )}
 
-        {/* proof */}
         {s === "proof" && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#0e9f6e] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">📸</div>
@@ -213,9 +279,7 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
             <div className="flex items-center gap-1 justify-center mb-4">
               {["Quoted", "Booked", "Rolling", "Photo", "Paid"].map((step, i) => (
                 <div key={step} className="flex items-center gap-1">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 3 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>
-                    {i === 0 ? "$" : i + 1}
-                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-extrabold ${i <= 3 ? "bg-[#0e9f6e] text-white" : "bg-[#d9d9d9] text-[#5c6a62]"}`}>{i === 0 ? "$" : i + 1}</div>
                   {i < 4 && <div className="w-4 h-0.5 bg-[#d9d9d9]" />}
                 </div>
               ))}
@@ -223,28 +287,23 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
           </div>
         )}
 
-        {/* paid */}
         {s === "paid" && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#0e9f6e] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">✓</div>
             <h1 className="text-[28px] font-[800] font-bricolage mb-2">Receipt</h1>
             <div className="bg-white border border-[rgba(16,22,19,0.09)] rounded-2xl p-6 mb-4 shadow-lg">
-              <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[42px] text-[#0e9f6e]">${job.quoteAmount?.toFixed(2)}</div>
+              <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[42px] text-[#0e9f6e]">${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}</div>
               <div className="text-[13px] text-[#5c6a62] font-semibold mt-1">{fmtTime(job.paidAt)}</div>
               {job.paymentMethod === "cash" && <div className="text-[12px] font-extrabold text-[#d9a441] mt-1">Paid cash</div>}
               {job.proofPhotoUrl && (
-                <div className="mt-3">
-                  <img src={job.proofPhotoUrl} alt="Proof of delivery" className="w-32 h-32 object-cover rounded-xl mx-auto border border-[rgba(16,22,19,0.09)]" />
-                </div>
+                <div className="mt-3"><img src={job.proofPhotoUrl} alt="Proof of delivery" className="w-32 h-32 object-cover rounded-xl mx-auto border border-[rgba(16,22,19,0.09)]" /></div>
               )}
             </div>
             <p className="text-[13px] text-[#5c6a62]">Saved here forever.</p>
             <div className="flex items-center gap-1 justify-center mt-4">
               {["Quoted", "Booked", "Rolling", "Photo", "Paid"].map((step, i) => (
                 <div key={step} className="flex items-center gap-1">
-                  <div className="w-7 h-7 rounded-full bg-[#0e9f6e] text-white flex items-center justify-center text-[11px] font-extrabold">
-                    {i === 0 ? "$" : i + 1}
-                  </div>
+                  <div className="w-7 h-7 rounded-full bg-[#0e9f6e] text-white flex items-center justify-center text-[11px] font-extrabold">{i === 0 ? "$" : i + 1}</div>
                   {i < 4 && <div className="w-4 h-0.5 bg-[#0e9f6e]" />}
                 </div>
               ))}
@@ -252,7 +311,6 @@ export default function JobPage({ params }: { params: { jobId: string } }) {
           </div>
         )}
 
-        {/* declined/cancelled */}
         {isDone && s !== "paid" && (
           <div className="text-center">
             <div className="w-14 h-14 rounded-full bg-[#5c6a62] text-white text-[26px] font-extrabold flex items-center justify-center mx-auto mb-4">—</div>

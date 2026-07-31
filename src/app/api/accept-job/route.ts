@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Job is not in quoted state" }, { status: 400 });
     }
 
-    await ref.update({ status: "accepted", acceptedAt: new Date() });
+    const agreedAmount = data.offerAmount ?? data.quoteAmount;
+    await ref.update({ status: "accepted", acceptedAt: new Date(), agreedAmount });
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("accept-job error:", e);

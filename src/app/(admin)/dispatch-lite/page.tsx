@@ -8,6 +8,7 @@ import { CEO_UID, SERVICES } from "@/lib/constants";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import LiteJobCard from "@/components/dispatch/LiteJobCard";
+import JobSheet from "@/components/dispatch/JobSheet";
 import type { DispatchJob } from "@/types/dispatch";
 
 function todayStart(): number {
@@ -44,6 +45,7 @@ export default function DispatchLitePage() {
   const [newDesc, setNewDesc] = useState("");
   const [newWindow, setNewWindow] = useState("");
   const [newSubmitting, setNewSubmitting] = useState(false);
+  const [sheetJobId, setSheetJobId] = useState<string | null>(null);
   const jobsRef = useRef<DispatchJob[]>([]);
 
   useEffect(() => {
@@ -82,12 +84,9 @@ export default function DispatchLitePage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok && data.error !== "Twilio not configured") throw new Error(data.error || "Failed");
-      // Always set quoted — even if Twilio is off
       await updateDoc(doc(db, "dispatchJobs", jobId), { status: "quoted", quoteAmount: Number(price), quotedAt: serverTimestamp() });
       setQuotePrices((p) => ({ ...p, [jobId]: "" }));
-      if (data.error === "Twilio not configured") {
-        setError("SMS off — copy & text it yourself");
-      }
+      if (data.error === "Twilio not configured") setError("SMS off — copy & text it yourself");
     } catch (e) {
       rollback();
       setError(e instanceof Error ? e.message : "Failed to send quote");
@@ -146,11 +145,7 @@ export default function DispatchLitePage() {
         createdAt: new Date(),
       });
       setShowNewJob(false); setNewName(""); setNewPhone(""); setNewPickup(""); setNewDropoff(""); setNewDesc(""); setNewWindow(""); setNewJobType("delivery");
-    } catch (e) {
-      setError("Failed to create job");
-    } finally {
-      setNewSubmitting(false);
-    }
+    } catch { setError("Failed to create job"); } finally { setNewSubmitting(false); }
   };
 
   if (loading) return <LoadingScreen />;
@@ -162,9 +157,7 @@ export default function DispatchLitePage() {
           <h1 className="text-white text-[24px] font-bold mb-2">Owner sign-in</h1>
           <p className="text-[#9db3a8] text-[14px] mb-6">Sign in to access the dispatch board</p>
           <button onClick={() => router.replace("/login?next=/dispatch-lite")}
-            className="bg-[#0e9f6e] text-white font-bold text-[16px] px-8 py-3 rounded-full hover:bg-[#0a7a54] transition-colors cursor-pointer border-none">
-            Sign in
-          </button>
+            className="bg-[#0e9f6e] text-white font-bold text-[16px] px-8 py-3 rounded-full hover:bg-[#0a7a54] transition-colors cursor-pointer border-none">Sign in</button>
         </div>
       </main>
     );
@@ -175,7 +168,8 @@ export default function DispatchLitePage() {
   const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status));
   const doneToday = jobs.filter((j) => j.status === "paid" && isToday(j.paidAt));
   const open = jobs.filter((j) => !["paid", "declined", "cancelled"].includes(j.status));
-  const todayTotal = doneToday.reduce((s, j) => s + (j.quoteAmount ?? 0), 0);
+  const todayTotal = doneToday.reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0), 0);
+  const sheetJob = sheetJobId ? jobs.find((j) => j.id === sheetJobId) ?? null : null;
 
   return (
     <main className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
@@ -183,9 +177,7 @@ export default function DispatchLitePage() {
         <div className="flex items-center gap-3">
           <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">gridd</div>
           <button onClick={() => setShowNewJob(!showNewJob)}
-            className="text-[11px] font-extrabold bg-[#0e9f6e] text-white rounded-full px-3 py-1.5 border-none cursor-pointer hover:bg-[#0a7a54] transition-colors">
-            + New job
-          </button>
+            className="text-[11px] font-extrabold bg-[#0e9f6e] text-white rounded-full px-3 py-1.5 border-none cursor-pointer hover:bg-[#0a7a54] transition-colors">+ New job</button>
         </div>
         <div className="flex items-center gap-4 text-[13px] font-extrabold text-[#5c6a62]">
           <span>${todayTotal.toFixed(0)} <span className="text-[10px] font-bold">today</span></span>
@@ -204,7 +196,6 @@ export default function DispatchLitePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 pb-10 max-w-[1400px] mx-auto">
         <Column title="New requests" count={newReqs.length}>
-          {/* New job inline form */}
           {showNewJob && (
             <div className="bg-white border border-[#0e9f6e] rounded-[18px] p-4 space-y-2">
               <div className="text-[12px] font-extrabold text-[#0e9f6e] mb-1">+ New job (phone booking)</div>
@@ -225,9 +216,7 @@ export default function DispatchLitePage() {
               </div>
               <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description" rows={2} className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] resize-none" />
               <button onClick={handleNewJob} disabled={newSubmitting || !newPhone.trim()}
-                className="w-full bg-[#0e9f6e] text-white font-bold text-[13px] py-2.5 rounded-full border-none cursor-pointer disabled:opacity-50">
-                {newSubmitting ? "Creating..." : "Create job"}
-              </button>
+                className="w-full bg-[#0e9f6e] text-white font-bold text-[13px] py-2.5 rounded-full border-none cursor-pointer disabled:opacity-50">{newSubmitting ? "Creating..." : "Create job"}</button>
             </div>
           )}
           {newReqs.length === 0 && !showNewJob && <Empty>No new requests.</Empty>}
@@ -238,6 +227,7 @@ export default function DispatchLitePage() {
               onAdvance={(s, e) => handleAdvance(job.id, s, e)}
               onPhotoUpload={(f) => handlePhotoUpload(job.id, f)}
               onPaid={(c) => handlePaid(job.id, c)}
+              onOpenSheet={() => setSheetJobId(job.id)}
               quotingId={quotingId} uploadingId={uploadingId} />
           ))}
         </Column>
@@ -250,6 +240,7 @@ export default function DispatchLitePage() {
               onAdvance={(s, e) => handleAdvance(job.id, s, e)}
               onPhotoUpload={(f) => handlePhotoUpload(job.id, f)}
               onPaid={(c) => handlePaid(job.id, c)}
+              onOpenSheet={() => setSheetJobId(job.id)}
               quotingId={quotingId} uploadingId={uploadingId} />
           ))}
         </Column>
@@ -259,7 +250,7 @@ export default function DispatchLitePage() {
             <div key={job.id} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-extrabold text-[14px]">{job.contactName || "Unknown"}</span>
-                <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${job.quoteAmount?.toFixed(2)}</span>
+                <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-[#5c6a62] font-semibold mt-1">
                 <span>{fmtTime(job.paidAt)}</span>
@@ -280,6 +271,17 @@ export default function DispatchLitePage() {
           )}
         </Column>
       </div>
+
+      {sheetJob && (
+        <JobSheet job={sheetJob} onClose={() => setSheetJobId(null)}
+          quotePrice={quotePrices[sheetJob.id] ?? ""}
+          onQuoteChange={(v) => setQuotePrices((p) => ({ ...p, [sheetJob.id]: v }))}
+          onSendQuote={() => handleSendQuote(sheetJob.id)}
+          onAdvance={(s, e) => handleAdvance(sheetJob.id, s, e)}
+          onPhotoUpload={(f) => handlePhotoUpload(sheetJob.id, f)}
+          onPaid={(c) => handlePaid(sheetJob.id, c)}
+          quotingId={quotingId} uploadingId={uploadingId} />
+      )}
     </main>
   );
 }

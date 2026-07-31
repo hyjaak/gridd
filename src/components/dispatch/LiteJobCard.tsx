@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "@/lib/firebase";
+import { firebaseAuth } from "@/lib/firebase";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -25,16 +24,19 @@ function addrStr(a: { street?: string; city: string } | undefined): string {
   return a.street ? `${a.street}, ${a.city}` : a.city;
 }
 
-export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuote, onAdvance, onPhotoUpload, onPaid, quotingId, uploadingId }: {
+export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuote, onAdvance, onPhotoUpload, onPaid, onOpenSheet, quotingId, uploadingId }: {
   job: DispatchJob; quotePrice: string;
   onQuoteChange: (v: string) => void; onSendQuote: () => void;
   onAdvance: (s: string, e?: Record<string, unknown>) => void;
   onPhotoUpload: (f: File) => void; onPaid: (c?: boolean) => void;
+  onOpenSheet?: () => void;
   quotingId: string | null; uploadingId: string | null;
 }) {
   const [advancing, setAdvancing] = useState(false);
   const [copiedQuote, setCopiedQuote] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [counterAmt, setCounterAmt] = useState("");
+  const [countering, setCountering] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const busy = advancing || quotingId === job.id || uploadingId === job.id;
 
@@ -48,14 +50,35 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
     if (f) onPhotoUpload(f);
   };
 
+  const handleCounter = async () => {
+    const amt = Number(counterAmt);
+    if (isNaN(amt) || amt < 20 || amt > 500) return;
+    setCountering(true);
+    try {
+      const token = await firebaseAuth?.currentUser?.getIdToken();
+      await fetch("/api/counter-offer", {
+        method: "POST", headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ jobId: job.id, amount: amt, by: "owner" }),
+      });
+      setCounterAmt("");
+    } catch {} finally { setCountering(false); }
+  };
+
   const copyQuote = async () => {
     const text = `GRIDD quote: $${job.quoteAmount?.toFixed(2)} flat — locked, not an estimate. See your job & book: https://gridd.click/j/${job.id}`;
     try { await navigator.clipboard.writeText(text); setCopiedQuote(true); setTimeout(() => setCopiedQuote(false), 2000); } catch {}
   };
 
   const copyLink = async () => {
-    const link = `https://gridd.click/j/${job.id}`;
-    try { await navigator.clipboard.writeText(link); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 2000); } catch {}
+    try { await navigator.clipboard.writeText(`https://gridd.click/j/${job.id}`); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 2000); } catch {}
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button, input, a, select, textarea")) return;
+    onOpenSheet?.();
   };
 
   const name = job.contactName || "Unknown";
@@ -64,7 +87,7 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
   const notes = [pickup?.notes, dropoff?.notes].filter(Boolean);
 
   return (
-    <div className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px_15px_13px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
+    <div onClick={handleCardClick} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px_15px_13px] shadow-[0_10px_30px_rgba(16,22,19,0.06)] cursor-pointer transition-shadow duration-200 hover:shadow-[0_10px_30px_rgba(16,22,19,0.1)]">
       <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
         <span className="font-extrabold text-[14px] truncate max-w-[140px]">{name}</span>
         {job.customerPhone && (
@@ -114,6 +137,38 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
         </div>
       )}
 
+      {/* Customer counter-offer banner */}
+      {job.status === "quoted" && job.offerBy === "customer" && (
+        <div className="bg-[#d9a441]/20 border border-[#d9a441] rounded-xl p-2.5 mb-2">
+          <div className="text-[12px] font-extrabold text-[#d9a441]">COUNTER: ${job.offerAmount?.toFixed(2)}</div>
+          <div className="text-[10.5px] text-[#5c6a62] font-semibold mt-0.5 mb-1.5">
+            {job.offerLog?.map((e, i) => <span key={i}>{i > 0 && " → "}${e.amount}</span>)}
+          </div>
+          <div className="flex gap-1.5 mt-1.5">
+            <button onClick={() => doAdvance("accepted", { agreedAmount: job.offerAmount, acceptedAt: new Date().toISOString() })} disabled={busy}
+              className="flex-1 border-none font-extrabold text-[10.5px] rounded-lg px-2 py-1.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50">✅ Accept ${job.offerAmount?.toFixed(2)}</button>
+            <button onClick={() => {
+              const mid = Math.round(((job.quoteAmount ?? 0) + (job.offerAmount ?? job.quoteAmount ?? 0)) / 2 / 5) * 5;
+              setCounterAmt(String(mid));
+            }} disabled={busy}
+              className="border-none font-extrabold text-[10.5px] rounded-lg px-2 py-1.5 cursor-pointer bg-[#101613] text-white">↩ Counter</button>
+            <button onClick={() => doAdvance("quoted", { offerAmount: job.quoteAmount, offerBy: "owner" })}
+              className="border-none font-extrabold text-[10.5px] rounded-lg px-2 py-1.5 cursor-pointer bg-transparent text-[#5c6a62] border border-[rgba(16,22,19,0.09)]">✋ Hold</button>
+          </div>
+          {counterAmt && (
+            <div className="flex gap-1.5 mt-1.5">
+              <div className="relative flex-1">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[11px] font-extrabold">$</span>
+                <input type="number" value={counterAmt} onChange={(e) => setCounterAmt(e.target.value)}
+                  className="w-full border rounded-lg px-2 py-1.5 text-[11.5px] bg-white pl-5 focus:outline-none focus:border-[#0e9f6e]" />
+              </div>
+              <button onClick={handleCounter} disabled={countering}
+                className="border-none font-extrabold text-[10.5px] rounded-lg px-3 py-1.5 cursor-pointer bg-[#0e9f6e] text-white">{countering ? "..." : "Send"}</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* NEW */}
       {job.status === "request" && (
         <div className="flex gap-2 mb-2">
@@ -134,8 +189,8 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
         </div>
       )}
 
-      {/* QUOTED */}
-      {job.status === "quoted" && (
+      {/* QUOTED (no customer counter) */}
+      {job.status === "quoted" && job.offerBy !== "customer" && (
         <div className="flex flex-col gap-1.5 mb-2">
           <div className="text-[12px] text-[#5c6a62] font-semibold">${job.quoteAmount?.toFixed(2)} · waiting on YES</div>
           <div className="flex gap-2 flex-wrap">
@@ -143,7 +198,7 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
               className="border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2 cursor-pointer bg-[#101613] text-white disabled:opacity-50 transition-opacity duration-200">
               {quotingId === job.id ? "..." : "Resend"}
             </button>
-            <button onClick={() => doAdvance("accepted")}
+            <button onClick={() => doAdvance("accepted", { agreedAmount: job.quoteAmount, acceptedAt: new Date().toISOString() })}
               className="border-none font-inherit font-extrabold text-xs rounded-xl px-3 py-2 cursor-pointer bg-[#0e9f6e] text-white">
               Mark accepted
             </button>
