@@ -32,6 +32,7 @@ export type DispatchJob = {
   proofPhotoUrl?: string;
   paymentMethod?: string;
   createdAt?: any;
+  updatedAt?: any;
   quotedAt?: any;
   acceptedAt?: any;
   paidAt?: any;

@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CEO_UID, SERVICES } from "@/lib/constants";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import LiteJobCard from "@/components/dispatch/LiteJobCard";
 import JobSheet from "@/components/dispatch/JobSheet";
+import HistorySection from "@/components/dispatch/HistorySection";
+import SuggestLine from "@/components/dispatch/SuggestLine";
 import type { DispatchJob } from "@/types/dispatch";
 
 function todayStart(): number {
@@ -16,16 +18,23 @@ function todayStart(): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
 }
 
+function tsMs(ts: any): number {
+  if (!ts) return 0;
+  return ts.seconds ? ts.seconds * 1000 : (ts.toMillis?.() ?? 0);
+}
+
 function isToday(ts: any): boolean {
-  if (!ts) return false;
-  const t = ts.seconds ? ts.seconds * 1000 : (ts.toMillis?.() ?? 0);
+  const t = tsMs(ts);
   return t >= todayStart() && t < todayStart() + 86_400_000;
 }
 
 function fmtTime(ts: any): string {
   if (!ts) return "";
-  const t = ts.seconds ? ts.seconds * 1000 : (ts.toMillis?.() ?? 0);
-  return new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return new Date(tsMs(ts)).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function paidStamp(j: DispatchJob): any {
+  return j.paidAt ?? j.updatedAt ?? j.createdAt;
 }
 
 export default function DispatchLitePage() {
@@ -50,7 +59,7 @@ export default function DispatchLitePage() {
 
   useEffect(() => {
     if (!ok || user?.uid !== CEO_UID) return;
-    const q = query(collection(db, "dispatchJobs"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "dispatchJobs"), orderBy("createdAt", "desc"), limit(200));
     const unsub = onSnapshot(q, (snap) => {
       const list: DispatchJob[] = [];
       snap.forEach((d) => list.push({ id: d.id, ...d.data() } as DispatchJob));
@@ -84,7 +93,7 @@ export default function DispatchLitePage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok && data.error !== "Twilio not configured") throw new Error(data.error || "Failed");
-      await updateDoc(doc(db, "dispatchJobs", jobId), { status: "quoted", quoteAmount: Number(price), quotedAt: serverTimestamp() });
+      await updateDoc(doc(db, "dispatchJobs", jobId), { status: "quoted", quoteAmount: Number(price), quotedAt: serverTimestamp(), updatedAt: serverTimestamp() });
       setQuotePrices((p) => ({ ...p, [jobId]: "" }));
       if (data.error === "Twilio not configured") setError("SMS off — copy & text it yourself");
     } catch (e) {
@@ -95,13 +104,39 @@ export default function DispatchLitePage() {
     }
   };
 
+  /** Shared state machine — every card + sheet action flows through here. */
   const handleAdvance = async (jobId: string, nextStatus: string, extra?: Record<string, unknown>) => {
     optimisticUpdate(jobId, { status: nextStatus as any, ...extra } as any);
     try {
-      await updateDoc(doc(db, "dispatchJobs", jobId), { status: nextStatus, ...extra });
+      await updateDoc(doc(db, "dispatchJobs", jobId), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+        ...extra,
+      });
     } catch (e) {
       rollback();
       setError(e instanceof Error ? e.message : "Update failed");
+    }
+  };
+
+  /** ONE paid path — card, sheet, cash all land here. paidAt is ALWAYS serverTimestamp. */
+  const handlePaid = async (jobId: string, cash?: boolean) => {
+    const patch: Record<string, unknown> = {
+      status: "paid",
+      paidAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...(cash ? { paymentMethod: "cash" } : {}),
+    };
+    optimisticUpdate(jobId, {
+      status: "paid",
+      paidAt: new Date(),
+      ...(cash ? { paymentMethod: "cash" } : {}),
+    } as any);
+    try {
+      await updateDoc(doc(db, "dispatchJobs", jobId), patch);
+    } catch (e) {
+      rollback();
+      setError(e instanceof Error ? e.message : "Failed to mark paid");
     }
   };
 
@@ -121,13 +156,6 @@ export default function DispatchLitePage() {
     } finally {
       setUploadingId(null);
     }
-  };
-
-  const handlePaid = async (jobId: string, cash?: boolean) => {
-    await handleAdvance(jobId, "paid", {
-      paidAt: new Date().toISOString(),
-      ...(cash ? { paymentMethod: "cash" } : {}),
-    });
   };
 
   const handleNewJob = async () => {
@@ -166,10 +194,27 @@ export default function DispatchLitePage() {
 
   const newReqs = jobs.filter((j) => j.status === "request");
   const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status));
-  const doneToday = jobs.filter((j) => j.status === "paid" && isToday(j.paidAt));
+  // Hardened Done Today: paid AND stamped today (paidAt or backfilled updatedAt today).
+  const doneToday = jobs.filter((j) => j.status === "paid" && isToday(paidStamp(j)));
+  const doneAll = jobs.filter((j) => j.status === "paid");
+  const history = jobs
+    .filter((j) => ["paid", "declined", "cancelled"].includes(j.status))
+    .filter((j) => !doneToday.some((d) => d.id === j.id))
+    .sort((a, b) => tsMs(paidStamp(b)) - tsMs(paidStamp(a)))
+    .slice(0, 100);
   const open = jobs.filter((j) => !["paid", "declined", "cancelled"].includes(j.status));
   const todayTotal = doneToday.reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0), 0);
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const weekTotal = doneAll
+    .filter((j) => tsMs(paidStamp(j)) >= weekAgo)
+    .reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0), 0);
+  const allTimeRuns = doneAll.length;
   const sheetJob = sheetJobId ? jobs.find((j) => j.id === sheetJobId) ?? null : null;
+  const sheetOnSuggest = (p: number) => {
+    if (sheetJob) setQuotePrices((prev) => ({ ...prev, [sheetJob.id]: String(p) }));
+  };
+  const newFormPickup = { city: newPickup.trim() || "Dayton", street: "" };
+  const newFormDropoff = { city: newDropoff.trim() || "Dayton", street: "" };
 
   return (
     <main className="min-h-screen bg-[#eef3ef] font-['Inter',sans-serif] text-[#101613]">
@@ -184,6 +229,7 @@ export default function DispatchLitePage() {
           <span>{doneToday.length} <span className="text-[10px] font-bold">runs</span></span>
           <span>{newReqs.length} <span className="text-[10px] font-bold">waiting</span></span>
           <span>{open.length} <span className="text-[10px] font-bold">open</span></span>
+          <span className="hidden sm:inline text-[12px] font-bold text-[#8fa096]">${weekTotal.toFixed(0)} <span className="text-[10px]">wk</span> · {allTimeRuns} <span className="text-[10px]">all-time</span></span>
         </div>
       </header>
 
@@ -215,6 +261,8 @@ export default function DispatchLitePage() {
                 ))}
               </div>
               <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description" rows={2} className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] resize-none" />
+              <SuggestLine pickup={newFormPickup} dropoff={newFormDropoff} jobType={newJobType}
+                onSuggestion={(p) => setQuotePrices((prev) => ({ ...prev, ["__new"]: String(p) }))} />
               <button onClick={handleNewJob} disabled={newSubmitting || !newPhone.trim()}
                 className="w-full bg-[#0e9f6e] text-white font-bold text-[13px] py-2.5 rounded-full border-none cursor-pointer disabled:opacity-50">{newSubmitting ? "Creating..." : "Create job"}</button>
             </div>
@@ -244,38 +292,44 @@ export default function DispatchLitePage() {
               quotingId={quotingId} uploadingId={uploadingId} />
           ))}
         </Column>
-        <Column title="Done today" count={doneToday.length}>
-          {doneToday.length === 0 && <Empty>Nothing banked yet.</Empty>}
-          {doneToday.map((job) => (
-            <div key={job.id} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-extrabold text-[14px]">{job.contactName || "Unknown"}</span>
-                <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}</span>
+        <div>
+          <Column title="Done today" count={doneToday.length}>
+            {doneToday.length === 0 && <Empty>Nothing banked yet.</Empty>}
+            {doneToday.map((job) => (
+              <div key={job.id} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-[14px]">{job.contactName || "Unknown"}</span>
+                  <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-[#5c6a62] font-semibold mt-1">
+                  <span>{fmtTime(paidStamp(job))}</span>
+                  {job.paymentMethod === "cash" && <span className="text-[#d9a441] font-extrabold">CASH</span>}
+                  {job.proofPhotoUrl && (
+                    <a href={job.proofPhotoUrl} target="_blank" rel="noopener noreferrer"
+                      className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-[rgba(16,22,19,0.09)] flex-shrink-0">
+                      <img src={job.proofPhotoUrl} alt="" className="w-full h-full object-cover" />
+                    </a>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-[11px] text-[#5c6a62] font-semibold mt-1">
-                <span>{fmtTime(job.paidAt)}</span>
-                {job.paymentMethod === "cash" && <span className="text-[#d9a441] font-extrabold">CASH</span>}
-                {job.proofPhotoUrl && (
-                  <a href={job.proofPhotoUrl} target="_blank" rel="noopener noreferrer"
-                    className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-[rgba(16,22,19,0.09)] flex-shrink-0">
-                    <img src={job.proofPhotoUrl} alt="" className="w-full h-full object-cover" />
-                  </a>
-                )}
+            ))}
+            {doneToday.length > 0 && (
+              <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[16px] text-[#0e9f6e] text-right mt-2 px-1">
+                Total: ${todayTotal.toFixed(2)}
               </div>
-            </div>
-          ))}
-          {doneToday.length > 0 && (
-            <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[16px] text-[#0e9f6e] text-right mt-2 px-1">
-              Total: ${todayTotal.toFixed(2)}
-            </div>
-          )}
-        </Column>
+            )}
+          </Column>
+          <div className="mt-4">
+            <HistorySection jobs={history} onOpenSheet={(id) => setSheetJobId(id)} />
+          </div>
+        </div>
       </div>
 
       {sheetJob && (
         <JobSheet job={sheetJob} onClose={() => setSheetJobId(null)}
           quotePrice={quotePrices[sheetJob.id] ?? ""}
           onQuoteChange={(v) => setQuotePrices((p) => ({ ...p, [sheetJob.id]: v }))}
+          onSuggestion={sheetOnSuggest}
           onSendQuote={() => handleSendQuote(sheetJob.id)}
           onAdvance={(s, e) => handleAdvance(sheetJob.id, s, e)}
           onPhotoUpload={(f) => handlePhotoUpload(sheetJob.id, f)}

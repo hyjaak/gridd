@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, firebaseAuth } from "@/lib/firebase";
+import SuggestLine from "@/components/dispatch/SuggestLine";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,11 +27,12 @@ function fmtTime(ts: any): string {
   return new Date(t).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSendQuote, onAdvance, onPhotoUpload, onPaid, quotingId, uploadingId }: {
+export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSendQuote, onAdvance, onPhotoUpload, onPaid, onSuggestion, quotingId, uploadingId }: {
   job: DispatchJob; onClose: () => void;
   quotePrice: string; onQuoteChange: (v: string) => void; onSendQuote: () => void;
   onAdvance: (s: string, e?: Record<string, unknown>) => void;
   onPhotoUpload: (f: File) => void; onPaid: (c?: boolean) => void;
+  onSuggestion?: (price: number) => void;
   quotingId: string | null; uploadingId: string | null;
 }) {
   const [advancing, setAdvancing] = useState(false);
@@ -161,7 +163,10 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
 
           {/* Actions — same as card */}
           {job.status === "request" && (
-            <div className="flex gap-2">
+            <div className="space-y-2">
+              <SuggestLine pickup={job.pickupAddress} dropoff={job.dropoffAddress} jobType={job.jobType}
+                market={job.market} onSuggestion={(p) => onSuggestion?.(p)} />
+              <div className="flex gap-2">
               <div className="relative flex-1">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
                 <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
@@ -172,6 +177,7 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
                 className="border-none font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50">{quotingId === job.id ? "..." : "Send"}</button>
               <button onClick={() => { if (confirm("Decline?")) doAdvance("declined"); }}
                 className="border-none font-extrabold text-[11.5px] px-1 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b]">Decline</button>
+              </div>
             </div>
           )}
 

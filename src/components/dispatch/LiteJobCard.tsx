@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { firebaseAuth } from "@/lib/firebase";
+import SuggestLine from "@/components/dispatch/SuggestLine";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -171,21 +172,25 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
 
       {/* NEW */}
       {job.status === "request" && (
-        <div className="flex gap-2 mb-2">
-          <div className="relative flex-1">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
-            <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
-              value={quotePrice} onChange={(e) => onQuoteChange(e.target.value)}
-              className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-2.5 py-2.5 text-sm text-[#101613] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] focus:bg-white transition-colors pl-6" />
+        <div className="space-y-2 mb-2">
+          <SuggestLine pickup={job.pickupAddress} dropoff={job.dropoffAddress} jobType={job.jobType}
+            market={job.market} onSuggestion={(p) => onQuoteChange(String(p))} />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
+              <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
+                value={quotePrice} onChange={(e) => onQuoteChange(e.target.value)}
+                className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-2.5 py-2.5 text-sm text-[#101613] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] focus:bg-white transition-colors pl-6" />
+            </div>
+            <button onClick={onSendQuote} disabled={busy || !quotePrice.trim()}
+              className="border-none font-inherit font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity duration-200">
+              {quotingId === job.id ? "..." : "Send"}
+            </button>
+            <button onClick={() => { if (confirm("Decline this request?")) doAdvance("declined"); }}
+              className="border-none font-inherit font-extrabold text-[11.5px] px-1 py-1.5 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b] transition-colors duration-200">
+              Decline
+            </button>
           </div>
-          <button onClick={onSendQuote} disabled={busy || !quotePrice.trim()}
-            className="border-none font-inherit font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50 disabled:cursor-not-allowed transition-opacity duration-200">
-            {quotingId === job.id ? "..." : "Send"}
-          </button>
-          <button onClick={() => { if (confirm("Decline this request?")) doAdvance("declined"); }}
-            className="border-none font-inherit font-extrabold text-[11.5px] px-1 py-1.5 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b] transition-colors duration-200">
-            Decline
-          </button>
         </div>
       )}
 

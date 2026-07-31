@@ -155,13 +155,21 @@ export default function DispatchPage() {
   }, []);
 
   const handleAdvance = useCallback(async (jobId: string, nextStatus: string, extraFields?: Record<string, unknown>) => {
+    // Normalize paid writes: EVERY paid path lands here (card, sheet, cash, driver mode)
+    // and MUST use serverTimestamp — never a client ISO string (breaks "paid today" filtering).
+    let fields = extraFields;
+    if (nextStatus === "paid") {
+      const { paidAt: _ignored, ...rest } = extraFields ?? {};
+      fields = { ...rest, paidAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    }
+
     // Optimistic update
-    optimisticAdvance(jobId, nextStatus, extraFields);
+    optimisticAdvance(jobId, nextStatus, fields);
     
     try {
       await updateDoc(doc(db, "dispatchJobs", jobId), { 
         status: nextStatus, 
-        ...extraFields,
+        ...fields,
       });
       
       // Trigger confetti on paid
