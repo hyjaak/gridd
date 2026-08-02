@@ -40,4 +40,10 @@ export type DispatchJob = {
   offerBy?: "owner" | "customer";
   agreedAmount?: number;
   offerLog?: OfferLogEntry[];
+  etaMinutes?: number;
+  etaSetAt?: any;
+  rating?: number;
+  ratingComment?: string;
+  ratedAt?: any;
+  tipAmount?: number;
 };

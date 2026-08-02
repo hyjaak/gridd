@@ -134,7 +134,9 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
 
       {job.quoteAmount != null && (
         <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e] mb-2">
-          ${job.quoteAmount.toFixed(2)}
+          ${(job.agreedAmount ?? job.quoteAmount).toFixed(2)}
+          {job.tipAmount ? <span className="text-[12px] text-[#0e9f6e]"> +${job.tipAmount} tip</span> : null}
+          {job.rating != null && <span className="text-[12px] text-[#d9a441]"> ★{job.rating}</span>}
         </div>
       )}
 

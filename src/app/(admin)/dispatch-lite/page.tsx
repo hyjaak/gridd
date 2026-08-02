@@ -203,11 +203,11 @@ export default function DispatchLitePage() {
     .sort((a, b) => tsMs(paidStamp(b)) - tsMs(paidStamp(a)))
     .slice(0, 100);
   const open = jobs.filter((j) => !["paid", "declined", "cancelled"].includes(j.status));
-  const todayTotal = doneToday.reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0), 0);
+  const todayTotal = doneToday.reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0) + (j.tipAmount ?? 0), 0);
   const weekAgo = Date.now() - 7 * 86_400_000;
   const weekTotal = doneAll
     .filter((j) => tsMs(paidStamp(j)) >= weekAgo)
-    .reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0), 0);
+    .reduce((s, j) => s + (j.agreedAmount ?? j.quoteAmount ?? 0) + (j.tipAmount ?? 0), 0);
   const allTimeRuns = doneAll.length;
   const sheetJob = sheetJobId ? jobs.find((j) => j.id === sheetJobId) ?? null : null;
   const sheetOnSuggest = (p: number) => {
@@ -299,10 +299,14 @@ export default function DispatchLitePage() {
               <div key={job.id} className="bg-white border border-[rgba(16,22,19,0.09)] rounded-[18px] p-[15px] shadow-[0_10px_30px_rgba(16,22,19,0.06)]">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-extrabold text-[14px]">{job.contactName || "Unknown"}</span>
-                  <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}</span>
+                  <span className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[19px] text-[#0e9f6e]">
+                    ${(job.agreedAmount ?? job.quoteAmount)?.toFixed(2)}
+                    {job.tipAmount ? <span className="text-[12px] text-[#0e9f6e]"> +${job.tipAmount} tip</span> : null}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-[#5c6a62] font-semibold mt-1">
                   <span>{fmtTime(paidStamp(job))}</span>
+                  {job.rating != null && <span className="text-[#d9a441] font-extrabold">★{job.rating}</span>}
                   {job.paymentMethod === "cash" && <span className="text-[#d9a441] font-extrabold">CASH</span>}
                   {job.proofPhotoUrl && (
                     <a href={job.proofPhotoUrl} target="_blank" rel="noopener noreferrer"

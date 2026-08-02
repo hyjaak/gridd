@@ -156,9 +156,13 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
             {copiedLink ? "✓ Copied" : "🔗 Copy job link"}
           </button>
 
-          {/* Quote amount */}
+          {/* Quote amount + tip/rating */}
           {job.quoteAmount != null && (
-            <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">${job.quoteAmount.toFixed(2)}</div>
+            <div className="font-['Bricolage_Grotesque',sans-serif] font-extrabold text-[22px] text-[#0e9f6e]">
+              ${(job.agreedAmount ?? job.quoteAmount).toFixed(2)}
+              {job.tipAmount ? <span className="text-[13px] text-[#0e9f6e]"> +${job.tipAmount} tip</span> : null}
+              {job.rating != null && <span className="text-[13px] text-[#d9a441]"> ★{job.rating}</span>}
+            </div>
           )}
 
           {/* Actions — same as card */}

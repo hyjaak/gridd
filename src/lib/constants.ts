@@ -19,6 +19,9 @@ export const OWNER_NAME = "Ibrahim";
 /** Owner email */
 export const EMAIL = "rawjitta@gmail.com";
 
+/** Google review link (placeholder) — surfaces after a 4–5★ rating */
+export const REVIEW_URL = "https://g.page/r/GRIDD/review";
+
 /** GRIDD Dispatch services — single source of truth. jobType values match Firestore dispatchJobs schema. */
 export type ServiceId = "delivery" | "errand" | "hauling";
 
