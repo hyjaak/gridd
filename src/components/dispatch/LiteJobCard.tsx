@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { firebaseAuth } from "@/lib/firebase";
 import { mapsUrl } from "@/lib/dispatch-geo";
 import SuggestLine from "@/components/dispatch/SuggestLine";
+import CustomerMemory from "@/components/dispatch/CustomerMemory";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -146,6 +147,11 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
         </div>
       )}
 
+      {/* City sanity — never quote blind */}
+      {(pickup?.city === "Other (we'll confirm)" || dropoff?.city === "Other (we'll confirm)") && (
+        <div className="text-[10.5px] text-[#d9a441] font-extrabold mb-1.5">☎ confirm address before rolling</div>
+      )}
+
       {/* Customer counter-offer banner */}
       {job.status === "quoted" && job.offerBy === "customer" && (
         <div className="bg-[#d9a441]/20 border border-[#d9a441] rounded-xl p-2.5 mb-2">
@@ -181,6 +187,7 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
       {/* NEW */}
       {job.status === "request" && (
         <div className="space-y-2 mb-2">
+          <CustomerMemory phone={job.customerPhone} onPrefill={(amt) => onQuoteChange(String(amt))} />
           <SuggestLine pickup={job.pickupAddress} dropoff={job.dropoffAddress} jobType={job.jobType}
             market={job.market} onSuggestion={(p) => onQuoteChange(String(p))} />
           <div className="flex gap-2">

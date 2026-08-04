@@ -5,6 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, firebaseAuth } from "@/lib/firebase";
 import { mapsUrl } from "@/lib/dispatch-geo";
 import SuggestLine from "@/components/dispatch/SuggestLine";
+import CustomerMemory from "@/components/dispatch/CustomerMemory";
 import type { DispatchJob } from "@/types/dispatch";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -126,6 +127,11 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
             <div key={i} className="text-[12px] text-[#d9a441] font-semibold">⚠ {n}</div>
           ) : null)}
 
+          {/* City sanity — never quote blind */}
+          {(pickup?.city === "Other (we'll confirm)" || dropoff?.city === "Other (we'll confirm)") && (
+            <div className="text-[11px] text-[#d9a441] font-extrabold">☎ confirm address before rolling</div>
+          )}
+
           {/* Window + rel time */}
           <div className="flex items-center gap-2 text-[12px] text-[#5c6a62] font-semibold">
             {job.timeWindow && <span className="font-bold rounded-md px-1.5 py-0.5 bg-[#eef3ef]">{job.timeWindow}</span>}
@@ -179,19 +185,20 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
           {/* Actions — same as card */}
           {job.status === "request" && (
             <div className="space-y-2">
+              <CustomerMemory phone={job.customerPhone} onPrefill={(amt) => onQuoteChange(String(amt))} />
               <SuggestLine pickup={job.pickupAddress} dropoff={job.dropoffAddress} jobType={job.jobType}
                 market={job.market} onSuggestion={(p) => onSuggestion?.(p)} />
               <div className="flex gap-2">
-              <div className="relative flex-1">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
-                <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
-                  value={quotePrice} onChange={(e) => onQuoteChange(e.target.value)}
-                  className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-2.5 py-2.5 text-sm bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] pl-6" />
-              </div>
-              <button onClick={onSendQuote} disabled={busy || !quotePrice.trim()}
-                className="border-none font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50">{quotingId === job.id ? "..." : "Send"}</button>
-              <button onClick={() => { if (confirm("Decline?")) doAdvance("declined"); }}
-                className="border-none font-extrabold text-[11.5px] px-1 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b]">Decline</button>
+                <div className="relative flex-1">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c6a62] text-[13.5px] font-extrabold">$</span>
+                  <input type="number" step="0.01" min="1" placeholder={String(job.estPrice ?? "0")}
+                    value={quotePrice} onChange={(e) => onQuoteChange(e.target.value)}
+                    className="w-full border-2 border-[rgba(16,22,19,0.09)] rounded-xl px-2.5 py-2.5 text-sm bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] pl-6" />
+                </div>
+                <button onClick={onSendQuote} disabled={busy || !quotePrice.trim()}
+                  className="border-none font-extrabold text-sm rounded-xl px-4 py-2.5 cursor-pointer bg-[#0e9f6e] text-white disabled:opacity-50">{quotingId === job.id ? "..." : "Send"}</button>
+                <button onClick={() => { if (confirm("Decline?")) doAdvance("declined"); }}
+                  className="border-none font-extrabold text-[11.5px] px-1 cursor-pointer bg-transparent text-[#5c6a62] hover:text-[#c0392b]">Decline</button>
               </div>
             </div>
           )}
