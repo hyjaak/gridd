@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import type { MarketKey } from "@/lib/constants";
-import type { AddressSuggestion } from "@/lib/dispatch-geo";
-import { searchAddress } from "@/lib/dispatch-geo";
 import { MARKETS } from "@/lib/constants";
+import { reverseGeocode } from "@/lib/dispatch-geo";
 
 type Props = {
   label: string;
@@ -33,72 +32,58 @@ export default function StopAddressInput({
   market,
   onGeoSelect,
 }: Props) {
-  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [showDetails, setShowDetails] = useState(false);
-  const [open, setOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [locating, setLocating] = useState(false);
+  const [locErr, setLocErr] = useState(false);
 
   const towns = MARKETS[market].towns;
   const cityOptions = [...towns, "Other (we'll confirm)"];
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+  const useMyLocation = async () => {
+    if (!("geolocation" in navigator)) { setLocErr(true); return; }
+    setLocating(true);
+    setLocErr(false);
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 });
+      });
+      const { latitude, longitude } = pos.coords;
+      const label = await reverseGeocode(latitude, longitude);
+      if (label) {
+        onStreetChange(label);
+        onGeoSelect?.({ lat: latitude, lng: longitude });
+      } else {
+        setLocErr(true);
       }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleStreetInput = (val: string) => {
-    onStreetChange(val);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (val.trim().length < 3) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
+    } catch {
+      // Silent on deny / failure — user keeps typing.
+      setLocErr(true);
+    } finally {
+      setLocating(false);
     }
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchAddress(val, market);
-      setSuggestions(results);
-      setOpen(results.length > 0);
-    }, 350);
-  };
-
-  const handleSelect = (s: AddressSuggestion) => {
-    onStreetChange(s.label);
-    onGeoSelect?.({ lat: s.lat, lng: s.lng });
-    setOpen(false);
-    setSuggestions([]);
   };
 
   return (
-    <div ref={containerRef} className="flex-1 relative">
+    <div className="flex-1">
       <div className="text-[12px] font-bold text-[#5c6a62] mb-1">{label}</div>
       <input
         type="text"
         value={street}
-        onChange={(e) => handleStreetInput(e.target.value)}
+        onChange={(e) => onStreetChange(e.target.value)}
         placeholder="Street address"
         className="w-full border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white mb-2 focus:outline-none focus:border-[#0e9f6e]"
         autoComplete="off"
       />
-      {open && suggestions.length > 0 && (
-        <div className="absolute top-[calc(100%-8px)] left-0 right-0 z-50 bg-white border border-black/12 rounded-xl shadow-lg max-h-[220px] overflow-y-auto">
-          {suggestions.map((s, i) => (
-            <button
-              key={`${s.lat}-${s.lng}-${i}`}
-              type="button"
-              onClick={() => handleSelect(s)}
-              className="w-full text-left px-3 py-2.5 text-[13px] text-[#5c6a62] hover:bg-[#f2faf6] hover:text-[#101613] transition-colors border-b border-black/6 last:border-b-0"
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+      <button
+        type="button"
+        onClick={useMyLocation}
+        disabled={locating}
+        className="text-[12px] text-[#0e9f6e] font-bold hover:underline mb-2 disabled:opacity-50"
+      >
+        {locating ? "Locating…" : "📍 Use my location"}
+      </button>
+      {locErr && (
+        <div className="text-[11px] text-[#5c6a62] font-semibold mb-2">Couldn't get location — just type it.</div>
       )}
       <select
         value={city}

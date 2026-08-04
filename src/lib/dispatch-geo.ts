@@ -3,6 +3,12 @@ import type { MarketKey } from "@/lib/constants";
 export type GeoPoint = { lat: number; lng: number };
 export type AddressSuggestion = { label: string; lat: number; lng: number };
 
+/** Google Maps deep link — the real map app does the finding, not us. */
+export function mapsUrl(street: string | undefined, city: string | undefined, state?: string): string {
+  const q = [street, city, state].filter(Boolean).join(", ");
+  return `https://maps.google.com/?q=${encodeURIComponent(q || city || "")}`;
+}
+
 const MARKET_CENTERS: Record<MarketKey, GeoPoint> = {
   OH: { lat: 39.7589, lng: -84.1916 },
   GA: { lat: 33.9412, lng: -84.2135 },
@@ -55,6 +61,31 @@ export async function searchAddress(
       .slice(0, 5);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Reverse-geocode a lat/lng via Photon (free, no API key).
+ * Returns a street-ish label or null on failure.
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const f = data.features?.[0];
+    if (!f?.properties) return null;
+    const p = f.properties;
+    const street = p.name || p.street || "";
+    const city = p.city || p.town || p.village || "";
+    const parts = [street, city].filter(Boolean);
+    return parts.length ? parts.join(", ") : null;
+  } catch {
+    return null;
   }
 }
 

@@ -11,6 +11,9 @@ import LiteJobCard from "@/components/dispatch/LiteJobCard";
 import JobSheet from "@/components/dispatch/JobSheet";
 import HistorySection from "@/components/dispatch/HistorySection";
 import SuggestLine from "@/components/dispatch/SuggestLine";
+import VoiceInput from "@/components/dispatch/VoiceInput";
+import TodayGrid, { type GridFilter } from "@/components/dispatch/TodayGrid";
+import { MARKETS } from "@/lib/constants";
 import type { DispatchJob } from "@/types/dispatch";
 
 function todayStart(): number {
@@ -55,7 +58,11 @@ export default function DispatchLitePage() {
   const [newWindow, setNewWindow] = useState("");
   const [newSubmitting, setNewSubmitting] = useState(false);
   const [sheetJobId, setSheetJobId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<GridFilter>(null);
+  const [reading, setReading] = useState(false);
   const jobsRef = useRef<DispatchJob[]>([]);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const towns = MARKETS.OH.towns.map((t) => t.toLowerCase());
 
   useEffect(() => {
     if (!ok || user?.uid !== CEO_UID) return;
@@ -158,6 +165,40 @@ export default function DispatchLitePage() {
     }
   };
 
+  const handleVoice = (text: string) => {
+    setNewDesc((prev) => (prev ? `${prev} ${text}` : text));
+    // Parse-lite: "from X to Y" → prefill cities when they match known towns
+    const m = text.toLowerCase().match(/from\s+([a-z\s]+?)\s+to\s+([a-z\s]+?)(?:\.|$)/i);
+    if (m) {
+      const from = m[1].trim();
+      const to = m[2].trim();
+      if (towns.includes(from)) setNewPickup(from.charAt(0).toUpperCase() + from.slice(1));
+      if (towns.includes(to)) setNewDropoff(to.charAt(0).toUpperCase() + to.slice(1));
+    }
+  };
+
+  const readBoard = () => {
+    if (!("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    synthRef.current = synth;
+    if (reading) { synth.cancel(); setReading(false); return; }
+    const waiting = newReqs.length;
+    const booked = jobs.filter((j) => ["accepted", "assigned", "pickup"].includes(j.status)).length;
+    const paidToday = doneToday.length;
+    const paidTotal = todayTotal;
+    const lines = [
+      `${waiting} waiting.`,
+      ...jobs.filter((j) => ["accepted", "assigned", "pickup"].includes(j.status)).slice(0, 3).map((j) =>
+        `${j.contactName || "Someone"}, ${j.jobType}, ${j.pickupAddress?.city ?? "?"} to ${j.dropoffAddress?.city ?? "?"}, ${j.agreedAmount ?? j.quoteAmount ?? 0} dollars, booked.`),
+      `One paid today, ${paidTotal.toFixed(0)} dollars.`,
+    ];
+    const utter = new SpeechSynthesisUtterance(lines.join(" "));
+    utter.onend = () => setReading(false);
+    utter.onerror = () => setReading(false);
+    setReading(true);
+    synth.speak(utter);
+  };
+
   const handleNewJob = async () => {
     if (!newPhone.trim()) return;
     setNewSubmitting(true);
@@ -192,8 +233,17 @@ export default function DispatchLitePage() {
   }
   if (user?.uid !== CEO_UID) { router.replace("/"); return <LoadingScreen />; }
 
-  const newReqs = jobs.filter((j) => j.status === "request");
-  const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status));
+  const now = Date.now();
+  const twoHrs = 2 * 60 * 60 * 1000;
+  const filterMatch = (j: DispatchJob): boolean => {
+    if (filter === "needs") return j.status === "request";
+    if (filter === "waiting") return j.status === "quoted" && tsMs(j.quotedAt ?? j.createdAt) < now - twoHrs;
+    if (filter === "due") return ["accepted", "assigned", "pickup", "in_progress"].includes(j.status) && ((j.timeWindow?.toLowerCase().includes("today") ?? false) || (j.timeWindow?.toLowerCase().includes("asap") ?? false));
+    if (filter === "unpaid") return j.status === "proof";
+    return true;
+  };
+  const newReqs = jobs.filter((j) => j.status === "request" && filterMatch(j));
+  const active = jobs.filter((j) => ["quoted", "accepted", "assigned", "pickup", "in_progress", "proof"].includes(j.status) && filterMatch(j));
   // Hardened Done Today: paid AND stamped today (paidAt or backfilled updatedAt today).
   const doneToday = jobs.filter((j) => j.status === "paid" && isToday(paidStamp(j)));
   const doneAll = jobs.filter((j) => j.status === "paid");
@@ -233,6 +283,8 @@ export default function DispatchLitePage() {
         </div>
       </header>
 
+      <TodayGrid jobs={jobs} filter={filter} onFilter={setFilter} onRead={readBoard} reading={reading} />
+
       {error && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#101613] text-white px-5 py-3 rounded-full text-sm font-semibold shadow-lg">
           {error}
@@ -260,7 +312,10 @@ export default function DispatchLitePage() {
                     className={`text-[10px] font-bold rounded-full px-2 py-1 border transition-colors ${newWindow === w ? "bg-[#0e9f6e] text-white border-[#0e9f6e]" : "bg-white text-[#5c6a62] border-black/12"}`}>{w}</button>
                 ))}
               </div>
-              <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description" rows={2} className="w-full border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] resize-none" />
+              <div className="flex items-center gap-2">
+                <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description" rows={2} className="flex-1 border border-[rgba(16,22,19,0.09)] rounded-xl px-3 py-2 text-[13px] bg-[#eef3ef] focus:outline-none focus:border-[#0e9f6e] resize-none" />
+                <VoiceInput onTranscript={handleVoice} label="🎤" />
+              </div>
               <SuggestLine pickup={newFormPickup} dropoff={newFormDropoff} jobType={newJobType}
                 onSuggestion={(p) => setQuotePrices((prev) => ({ ...prev, ["__new"]: String(p) }))} />
               <button onClick={handleNewJob} disabled={newSubmitting || !newPhone.trim()}

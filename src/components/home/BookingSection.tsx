@@ -10,6 +10,7 @@ import { submitBooking, type StopAddress } from "./booking";
 import TrustStrip from "./TrustStrip";
 import FitGuide from "./FitGuide";
 import StopAddressInput from "./StopAddressInput";
+import VoiceInput from "@/components/dispatch/VoiceInput";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 
@@ -289,13 +290,16 @@ export default function BookingSection({ market }: Props) {
             />
           )}
         </div>
-        <textarea
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          placeholder="The job — what, from where, to where?"
-          rows={2}
-          className="border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white mb-2 resize-vertical min-h-[70px] focus:outline-none focus:border-[#0e9f6e]"
-        />
+        <div className="flex items-start gap-2 mb-2">
+          <textarea
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="The job — what, from where, to where?"
+            rows={2}
+            className="flex-1 border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white resize-vertical min-h-[70px] focus:outline-none focus:border-[#0e9f6e]"
+          />
+          <VoiceInput onTranscript={(t) => setDesc((prev) => (prev ? `${prev} ${t}` : t))} />
+        </div>
         {error && <p className="text-[13px] text-red-500 mb-2">{error}</p>}
         <p className="text-[12px] text-[#5c6a62] text-center -mt-1 mb-2">
           We reply within the hour, Mon–Sat.

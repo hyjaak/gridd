@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage, firebaseAuth } from "@/lib/firebase";
+import { mapsUrl } from "@/lib/dispatch-geo";
 import SuggestLine from "@/components/dispatch/SuggestLine";
 import type { DispatchJob } from "@/types/dispatch";
 
@@ -104,10 +105,20 @@ export default function JobSheet({ job, onClose, quotePrice, onQuoteChange, onSe
             {job.market && <span className="text-[10px] font-extrabold rounded-md px-1.5 py-0.5 bg-[#101613] text-white">{job.market}</span>}
           </div>
 
-          {/* Addresses */}
+          {/* Addresses — tap to navigate */}
           <div className="text-[13px] text-[#5c6a62] font-semibold leading-snug">
-            <div><b>Pickup:</b> {pickup?.street ? `${pickup.street}, ` : ""}{pickup?.city}{pickup?.unit ? ` · Unit ${pickup.unit}` : ""}</div>
-            <div className="mt-0.5"><b>Drop:</b> {dropoff?.street ? `${dropoff.street}, ` : ""}{dropoff?.city}{dropoff?.unit ? ` · Unit ${dropoff.unit}` : ""}</div>
+            <div className="flex items-center gap-2">
+              <b>Pickup:</b>
+              <span>{pickup?.street ? `${pickup.street}, ` : ""}{pickup?.city}{pickup?.unit ? ` · Unit ${pickup.unit}` : ""}</span>
+              <a href={mapsUrl(pickup?.street, pickup?.city)} target="_blank" rel="noopener noreferrer"
+                className="ml-auto text-[10.5px] font-extrabold text-[#0e9f6e] no-underline hover:underline shrink-0">📍 Navigate</a>
+            </div>
+            <div className="mt-0.5 flex items-center gap-2">
+              <b>Drop:</b>
+              <span>{dropoff?.street ? `${dropoff.street}, ` : ""}{dropoff?.city}{dropoff?.unit ? ` · Unit ${dropoff.unit}` : ""}</span>
+              <a href={mapsUrl(dropoff?.street, dropoff?.city)} target="_blank" rel="noopener noreferrer"
+                className="ml-auto text-[10.5px] font-extrabold text-[#0e9f6e] no-underline hover:underline shrink-0">📍 Navigate</a>
+            </div>
           </div>
 
           {/* Notes */}

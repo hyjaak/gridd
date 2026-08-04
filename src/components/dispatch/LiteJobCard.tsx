@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { firebaseAuth } from "@/lib/firebase";
+import { mapsUrl } from "@/lib/dispatch-geo";
 import SuggestLine from "@/components/dispatch/SuggestLine";
 import type { DispatchJob } from "@/types/dispatch";
 
@@ -105,7 +106,12 @@ export default function LiteJobCard({ job, quotePrice, onQuoteChange, onSendQuot
       </div>
 
       <div className="text-[12.5px] text-[#5c6a62] font-semibold mb-1 leading-snug">
-        {job.jobType} · {addrStr(pickup)}<span className="text-[#0e9f6e] mx-1">→</span>{addrStr(dropoff)}
+        {job.jobType} ·{" "}
+        <a href={mapsUrl(pickup?.street, pickup?.city)} target="_blank" rel="noopener noreferrer"
+          className="text-[#0e9f6e] no-underline hover:underline">{addrStr(pickup)}</a>
+        <span className="text-[#0e9f6e] mx-1">→</span>
+        <a href={mapsUrl(dropoff?.street, dropoff?.city)} target="_blank" rel="noopener noreferrer"
+          className="text-[#0e9f6e] no-underline hover:underline">{addrStr(dropoff)}</a>
       </div>
 
       <div className="flex items-center gap-2 mb-1.5">

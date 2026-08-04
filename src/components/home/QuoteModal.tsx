@@ -6,6 +6,7 @@ import type { MarketKey, ServiceId } from "@/lib/constants";
 import { submitBooking, type StopAddress } from "./booking";
 import { fireConfetti } from "./confetti";
 import StopAddressInput from "./StopAddressInput";
+import VoiceInput from "@/components/dispatch/VoiceInput";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 
@@ -278,13 +279,16 @@ export default function QuoteModal({ open, onClose, market }: Props) {
                   />
                 )}
               </div>
-              <textarea
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="The job — what, from where, to where?"
-                rows={2}
-                className="border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white resize-vertical min-h-[70px] focus:outline-none focus:border-[#0e9f6e]"
-              />
+              <div className="flex items-start gap-2">
+                <textarea
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="The job — what, from where, to where?"
+                  rows={2}
+                  className="flex-1 border-[1.5px] border-black/14 rounded-xl px-3 py-3 text-[14.5px] bg-white resize-vertical min-h-[70px] focus:outline-none focus:border-[#0e9f6e]"
+                />
+                <VoiceInput onTranscript={(t) => setDesc((prev) => (prev ? `${prev} ${t}` : t))} />
+              </div>
               {error && <p className="text-[13px] text-red-500">{error}</p>}
               <button
                 type="button"
